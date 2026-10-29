@@ -1,0 +1,14 @@
+# Ядро
+python-docx>=1.1
+openpyxl>=3.1
+pypdf>=4.0
+pyyaml>=6.0
+requests>=2.31
+numpy>=1.26
+pandas>=2.1
+
+# Интерфейс
+streamlit>=1.38
+
+# Разработка
+pytest>=8.0

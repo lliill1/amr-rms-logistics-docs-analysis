@@ -1,0 +1,10 @@
+[server]
+address = "127.0.0.1"   # доступ только с этого компьютера
+headless = false
+maxUploadSize = 2000    # МБ, для больших zip-архивов
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+primaryColor = "#2457C5"

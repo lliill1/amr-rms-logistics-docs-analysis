@@ -1,0 +1,39 @@
+# Основные настройки. Локальные переопределения кладите в config/settings.local.yaml
+# (тот же формат, файл не попадает в git).
+
+paths:
+  data_dir: data            # рабочая папка: база, распакованные архивы, конвертированные файлы
+  output_dir: out           # куда выгружаются отчёты
+  db_file: data/docanalyzer.sqlite
+
+llm:
+  # Ollama: https://ollama.com (есть установщик для Windows)
+  base_url: http://localhost:11434
+  chat_model: qwen3:8b       # при видеокарте NVIDIA 8+ ГБ можно попробовать qwen3:14b
+  embed_model: bge-m3
+  temperature: 0.1
+  num_ctx: 8192              # окно контекста; больше — точнее, но медленнее и больше памяти
+  timeout_sec: 600
+
+libreoffice:
+  # Нужен для старых форматов .doc/.xls/.ppt. Пусто — искать автоматически.
+  soffice_path: ""
+
+processing:
+  chunk_max_chars: 2500      # максимальный размер фрагмента для поиска
+  chunk_overlap_chars: 200
+  min_text_chars_per_page: 40  # меньше — страница считается сканом (нужен OCR)
+
+catalog:
+  # По каким словам в пути или титуле понять сторону-автора документа.
+  # Впишите названия компаний заказчика и подрядчика (в нижнем регистре).
+  customer_markers: ["заказчик", "от заказчика"]
+  contractor_markers: ["подрядчик", "исполнитель", "интегратор"]
+
+search:
+  top_k: 6
+  use_vectors: true          # false — только полнотекстовый поиск (без Ollama)
+
+extraction:
+  min_relevance: 1           # извлекать требования только из документов с релевантностью AMR/RMS >= этого значения
+  quote_match_threshold: 0.9 # насколько точно цитата должна совпадать с текстом документа
