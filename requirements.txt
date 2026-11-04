@@ -7,8 +7,14 @@ requests>=2.31
 numpy>=1.26
 pandas>=2.1
 
-# Интерфейс
+# Веб-интерфейс: API (FastAPI) + статический фронтенд из web/
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+
+# Старый интерфейс на Streamlit (app.py, ui/) — можно убрать после перехода
 streamlit>=1.38
 
 # Разработка
 pytest>=8.0
+httpx>=0.27          # для тестов API

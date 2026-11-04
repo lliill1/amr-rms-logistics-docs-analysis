@@ -29,6 +29,22 @@
 
 Без Ollama приложение тоже работает: загрузка, каталог и поиск по словам доступны. Ответы модели и извлечение требований появятся, когда Ollama будет запущена.
 
+## Веб-интерфейс и API
+
+Логика вынесена за тонкий HTTP-слой (`api/`, FastAPI). Долгие операции (обработка архива, эмбеддинги, извлечение требований) идут фоновыми задачами с прогрессом; одновременно выполняется одна.
+
+Запуск: двойной щелчок по **`run_web.bat`** или `python server.py` (адрес `http://127.0.0.1:8501`, документация всех маршрутов — `/api/docs`). Статический фронтенд кладётся в `web/` и отдаётся с корневого адреса.
+
+| Группа | Маршруты |
+|---|---|
+| Служебное | `GET /api/status`, `GET /api/meta`, `GET /api/jobs/{id}`, `GET /api/jobs/current` |
+| Архив | `POST /api/archive/process` (путь), `POST /api/archive/upload` (zip), `POST /api/archive/embeddings`, `GET /api/archive/summary`, `GET /api/documents`, `PATCH /api/documents/{id}` |
+| Вопросы | `POST /api/ask` |
+| Факты | `GET /api/extraction/pending`, `POST /api/extraction/run`, `GET /api/requirements`, `GET`/`PATCH /api/requirements/{id}`, `POST /api/requirements/confirm`, `GET`/`POST /api/open-questions`, `PATCH`/`DELETE /api/open-questions/{id}` |
+| Отчёт | `GET /api/report/summary`, `POST /api/report/docx`, `POST /api/report/xlsx`, `GET /api/report/download/{имя}` |
+
+Старый интерфейс (`app.py`, `ui/`) пока оставлен рядом и работает как раньше.
+
 ## Быстрая проверка на вымышленных данных
 
 ```
@@ -53,8 +69,11 @@ python scripts\cli.py report --draft
 ## Структура
 
 ```
-app.py                 точка входа Streamlit
-ui/                    экраны интерфейса
+app.py                 точка входа Streamlit (старый интерфейс)
+ui/                    экраны Streamlit
+server.py              запуск веб-версии (FastAPI + web/)
+api/                   тонкий HTTP-слой над core/
+web/                   статический фронтенд (HTML/CSS/JS)
 core/
   ingest.py            распаковка архивов, конвертация LibreOffice, дубликаты
   parsers/             docx, pdf, xlsx, txt/csv, eml

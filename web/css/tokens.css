@@ -1,0 +1,150 @@
+/* ───────── Шрифт: Manrope (вариативный), лежит рядом, без обращений в интернет ───────── */
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url("../fonts/manrope-cyrillic-wght-normal.woff2") format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url("../fonts/manrope-latin-wght-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* ───────── Общие токены ───────── */
+:root {
+  --font: "Manrope", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
+
+  --r-xs: 8px;
+  --r-sm: 12px;
+  --r-md: 16px;
+  --r-lg: 22px;
+  --r-xl: 28px;
+  --r-pill: 999px;
+
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --dur: 160ms;
+
+  --content-w: 1360px;
+  --gutter: 32px;
+}
+
+/* ───────── Светлая тема (основная) ───────── */
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #f1f0f4;
+  --bg-glow: rgba(124, 77, 255, 0.1);
+  --surface: #ffffff;
+  --surface-2: #f6f5f9;
+  --surface-3: #ecebf2;
+  --surface-hover: #faf9fd;
+
+  --line: rgba(24, 18, 52, 0.08);
+  --line-strong: rgba(24, 18, 52, 0.18);
+
+  --text: #15122a;
+  --text-2: #5b5873;
+  --text-3: #8b88a0;
+
+  /* Акцент: фиолетовый */
+  --accent: #6d3ce8;
+  --accent-hover: #5c2dd4;
+  --accent-text: #5a2bd0;
+  --accent-soft: #eee8ff;
+  --accent-soft-2: #e0d5ff;
+  --accent-ring: rgba(109, 60, 232, 0.24);
+  --on-accent: #ffffff;
+
+  --success: #744a94;
+  --success-soft: #efe5f6;
+  --success-solid: #9b71b2;
+  --warning: #8a1450;
+  --warning-soft: #f8e4ed;
+  --warning-solid: #6b0733;
+  --danger: #c4302b;
+  --danger-soft: #fde8e6;
+  --danger-solid: #e5534b;
+  --info: #2557c8;
+  --info-soft: #e5edfd;
+  --info-solid: #4a7be8;
+
+  /* «Таблетка»-навигация */
+  --nav-bg: #14111f;
+  --nav-fg: #c4c0d9;
+  --nav-fg-hover: #ffffff;
+  --nav-active-bg: #ffffff;
+  --nav-active-fg: #15122a;
+  --nav-sep: rgba(255, 255, 255, 0.16);
+
+  --shadow-card: 0 1px 2px rgba(24, 18, 52, 0.04), 0 14px 34px -20px rgba(48, 28, 120, 0.2);
+  --shadow-pop: 0 28px 70px -24px rgba(24, 18, 52, 0.4), 0 2px 10px rgba(24, 18, 52, 0.08);
+  --shadow-btn: 0 1px 0 rgba(255, 255, 255, 0.18) inset, 0 6px 16px -8px rgba(109, 60, 232, 0.65);
+  --overlay: rgba(21, 18, 42, 0.36);
+  --tick-off: rgba(24, 18, 52, 0.15);
+  --toast-bg: #14111f;
+  --toast-fg: #f4f3fa;
+}
+
+/* ───────── Тёмная тема ───────── */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #130a2e;
+  --bg-glow: rgba(150, 100, 255, 0.34);
+  --surface: #1c1240;
+  --surface-2: rgba(255, 255, 255, 0.06);
+  --surface-3: rgba(255, 255, 255, 0.10);
+  --surface-hover: rgba(255, 255, 255, 0.08);
+
+  --line: rgba(200, 180, 255, 0.12);
+  --line-strong: rgba(200, 180, 255, 0.26);
+
+  --text: #f3eeff;
+  --text-2: #c2b4ea;
+  --text-3: #9484c4;
+
+  --accent: #8b5cf6;
+  --accent-hover: #9d74ff;
+  --accent-text: #cdb8ff;
+  --accent-soft: rgba(160, 120, 255, 0.20);
+  --accent-soft-2: rgba(160, 120, 255, 0.34);
+  --accent-ring: rgba(138, 105, 247, 0.38);
+  --on-accent: #ffffff;
+
+  --success: #d4b0ea;
+  --success-soft: rgba(155, 113, 178, 0.24);
+  --success-solid: #b48bd0;
+  --warning: #f08cb8;
+  --warning-soft: rgba(214, 92, 150, 0.20);
+  --warning-solid: #d0558f;
+  --danger: #ff8279;
+  --danger-soft: rgba(255, 130, 121, 0.13);
+  --danger-solid: #f4645b;
+  --info: #8badff;
+  --info-soft: rgba(139, 173, 255, 0.13);
+  --info-solid: #6d93f5;
+
+  --nav-bg: rgba(255, 255, 255, 0.07);
+  --nav-fg: #c2b4ea;
+  --nav-fg-hover: #ffffff;
+  --nav-active-bg: linear-gradient(135deg, #9b6dff, #7c4dff);
+  --nav-active-fg: #ffffff;
+  --nav-sep: rgba(255, 255, 255, 0.1);
+
+  --shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.015);
+  --shadow-pop: 0 32px 80px -20px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --shadow-btn: 0 1px 0 rgba(255, 255, 255, 0.25) inset, 0 0 22px -2px rgba(139, 92, 246, 0.6);
+  --overlay: rgba(10, 4, 30, 0.66);
+  --tick-off: rgba(255, 255, 255, 0.14);
+  --toast-bg: #2b1f5c;
+  --toast-fg: #f4f3fa;
+}

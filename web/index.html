@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ru" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DocAnalyzer AMR/RMS</title>
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f1f0f4">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <!-- Тему ставим до отрисовки, чтобы не было вспышки. Основная тема — светлая. -->
+  <script>
+    try {
+      var t = localStorage.getItem('da.theme');
+      document.documentElement.dataset.theme = t === 'dark' ? 'dark' : 'light';
+      if (t === 'dark') document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0e0d15');
+    } catch (e) {}
+  </script>
+  <link rel="preload" href="fonts/manrope-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/pages.css">
+  <link rel="stylesheet" href="css/dark.css">
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <div id="app"></div>
+  <noscript>Для работы DocAnalyzer нужен включённый JavaScript.</noscript>
+</body>
+</html>
