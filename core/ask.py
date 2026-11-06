@@ -40,7 +40,8 @@ def format_fragments(hits: list[Hit], max_chars: int = 1800) -> str:
 
 def ask(conn: sqlite3.Connection, settings: Settings, question: str, llm=None, only_current: bool = True) -> Answer:
     hits = search(conn, question, llm=llm, top_k=int(settings.get("search.top_k", 6)),
-                  only_current=only_current, use_vectors=bool(settings.get("search.use_vectors", True)))
+                  only_current=only_current, use_vectors=bool(settings.get("search.use_vectors", True)),
+                  max_per_doc=int(settings.get("search.max_per_document", 2)))
     if not hits:
         return Answer(text="В архиве не нашлось подходящих фрагментов. Попробуйте переформулировать вопрос.", hits=[])
     if llm is None:

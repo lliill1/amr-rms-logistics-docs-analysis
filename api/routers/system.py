@@ -7,6 +7,8 @@ from .. import schemas
 from ..deps import get_state
 from ..state import AppState
 from core.extract import CATEGORIES, OBLIGATIONS, TARGETS
+from core.facts import KINDS
+from core.vocab import load_vocab
 
 router = APIRouter()
 
@@ -44,6 +46,11 @@ def meta():
         "obligations": OBLIGATIONS,
         "requirement_statuses": schemas.REQ_STATUS_LABELS,
         "question_statuses": schemas.QUESTION_STATUSES,
+        # версия 2: справочник модели логистики (config/model.yaml) и виды извлекаемых фактов
+        "systems": load_vocab().systems,
+        "functions": [{"key": f.key, "title": f.title, "required": f.required} for f in load_vocab().functions],
+        "amr_roles": load_vocab().amr_roles,
+        "fact_kinds": [{"key": k.key, "title": k.title} for k in KINDS.values()],
     }
 
 

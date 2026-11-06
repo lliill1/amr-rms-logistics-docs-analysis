@@ -6,7 +6,7 @@ import { createBus, createStore } from './store.js';
 export const JOB_LABELS = {
   process: 'Обработка архива',
   embeddings: 'Расчёт эмбеддингов',
-  extraction: 'Извлечение требований',
+  extraction: 'Извлечение фактов',
 };
 export const JOB_PAGES = { process: '#/archive', embeddings: '#/archive', extraction: '#/facts' };
 

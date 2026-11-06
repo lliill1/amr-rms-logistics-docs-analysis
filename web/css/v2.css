@@ -1,0 +1,149 @@
+/* ───────── Версия 2: схемы, процессы, матрица ответственности, противоречия ─────────
+   Только токены темы — светлая и тёмная темы работают без отдельных правил. */
+
+/* Схема (SVG приходит с сервера, цвета переопределяем токенами) */
+.diagram {
+  position: relative;
+  overflow: auto;
+  padding: 8px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.diagram svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+.diagram--wide svg { max-width: none; }
+.diagram .dg { font-family: var(--font); }
+.diagram .dg-node rect { fill: var(--surface); stroke: var(--line-strong); }
+.diagram .dg-node--accent rect { fill: var(--accent-soft); stroke: var(--accent); }
+.diagram .dg-node text { fill: var(--text); }
+.diagram .dg-node .dg-sub { fill: var(--text-2); }
+.diagram .dg-edge { stroke: var(--text-3); }
+.diagram .dg-edge--accent { stroke: var(--accent); }
+.diagram .dg-arrow { fill: var(--text-3); }
+.diagram .dg-arrow--accent { fill: var(--accent); }
+.diagram .dg-elabel rect { fill: var(--surface-2); fill-opacity: 0.94; }
+.diagram .dg-elabel text { fill: var(--text-2); }
+.diagram .dg-lane rect { fill: var(--surface); stroke: var(--line); }
+.diagram .dg-lane text { fill: var(--text-2); }
+.diagram__note { margin-top: 10px; font-size: 12.5px; color: var(--text-2); }
+.diagram__legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12.5px; color: var(--text-2); }
+.diagram__legend i {
+  display: inline-block;
+  width: 22px;
+  height: 0;
+  margin-right: 6px;
+  vertical-align: middle;
+  border-top: 2px solid var(--text-3);
+}
+.diagram__legend i.is-accent { border-color: var(--accent); }
+.diagram__legend i.is-dashed { border-top-style: dashed; }
+
+/* Карточки процессов */
+.proc-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+.proc {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 20px;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease), background-color var(--dur) var(--ease);
+}
+.proc:hover { border-color: var(--accent-soft-2); background: var(--surface-hover); }
+.proc.is-dim { opacity: 0.55; }
+.proc__head { display: flex; align-items: flex-start; gap: 10px; }
+.proc__name { flex: 1; min-width: 0; font-weight: 700; font-size: 15px; letter-spacing: -0.01em; line-height: 1.35; }
+.proc__route { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; color: var(--text-2); }
+.proc__route .icon { color: var(--text-3); }
+.proc__steps { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.55; color: var(--text-2); }
+.proc__steps li::marker { color: var(--text-3); font-weight: 700; }
+.proc__steps b { color: var(--text); font-weight: 650; }
+.proc__foot { display: flex; align-items: center; gap: 8px; margin-top: auto; font-size: 12px; color: var(--text-3); }
+
+/* Редактор шагов процесса */
+.steps-edit { display: flex; flex-direction: column; gap: 8px; }
+.steps-edit__row { display: grid; grid-template-columns: 22px 150px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.steps-edit__n { font-size: 12px; font-weight: 700; color: var(--text-3); text-align: right; font-variant-numeric: tabular-nums; }
+@media (max-width: 560px) { .steps-edit__row { grid-template-columns: 22px minmax(0, 1fr) auto; } .steps-edit__row .select { grid-column: 2 / -1; } }
+
+/* Пары систем (обмены) */
+.flow { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; font-weight: 650; }
+.flow .icon { color: var(--accent-text); }
+
+/* Матрица ответственности */
+.matrix { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+.matrix th, .matrix td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: center; vertical-align: middle; }
+.matrix thead th { font-size: 12px; font-weight: 700; color: var(--text-2); white-space: nowrap; }
+.matrix th:first-child, .matrix td:first-child { text-align: left; min-width: 240px; }
+.matrix tbody tr:last-child td { border-bottom: 0; }
+.matrix__fn { font-weight: 650; }
+.matrix__req { margin-left: 6px; color: var(--warning); font-weight: 800; }
+.mcell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font: inherit;
+  font-weight: 800;
+  font-size: 12px;
+  cursor: pointer;
+}
+.mcell:hover { box-shadow: 0 0 0 2px var(--accent-ring); }
+.mcell--conflict { background: var(--danger-soft); color: var(--danger); }
+.mcell--old { background: var(--surface-3); color: var(--text-3); }
+.matrix tr.is-gap td:first-child { box-shadow: inset 3px 0 0 var(--warning); }
+.matrix tr.is-conflict td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
+
+/* Противоречия и пробелы */
+.conflicts { display: flex; flex-direction: column; gap: 12px; }
+.conflict { display: flex; flex-direction: column; gap: 14px; padding: 18px 20px; }
+.conflict.is-done { opacity: 0.72; }
+.conflict__head { display: flex; align-items: flex-start; gap: 12px; }
+.conflict__icon {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.conflict__icon--revision { background: var(--info-soft); color: var(--info); }
+.conflict__icon--gap { background: var(--warning-soft); color: var(--warning); }
+.conflict__title { flex: 1; min-width: 0; font-weight: 700; font-size: 15px; line-height: 1.4; letter-spacing: -0.01em; }
+.conflict__variants { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+.variant {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  border: 1px solid transparent;
+}
+.variant.is-chosen { border-color: var(--success); background: var(--success-soft); }
+.variant__value { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 15px; }
+.variant__src { font-size: 12.5px; color: var(--text-2); line-height: 1.5; }
+.variant__src q { display: block; margin-top: 4px; color: var(--text); font-style: italic; quotes: "«" "»"; }
+.conflict__actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* Выбор видов фактов на экране «Факты и ревью» */
+.kinds { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Узкие экраны и тёмная тема */
+.conflict__head { flex-wrap: wrap; }
+.conflict__title { flex: 1 1 260px; }
+.variant__src, .proc__foot, .drawer__sub { overflow-wrap: anywhere; }
+[data-theme="dark"] .diagram { background: rgba(255, 255, 255, 0.04); }
+[data-theme="dark"] .diagram .dg-elabel rect { fill: #251a4a; fill-opacity: 1; }
+[data-theme="dark"] .diagram .dg-node rect { fill: #1d1540; }
+[data-theme="dark"] .diagram .dg-node--accent rect { fill: #3a2580; }
+[data-theme="dark"] .diagram .dg-lane rect { fill: rgba(255, 255, 255, 0.04); }
+.drawer .diagram--wide svg { width: 760px; }
