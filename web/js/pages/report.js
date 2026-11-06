@@ -9,7 +9,7 @@ import { sectionPill } from '../labels.js';
 import { toast, toastError } from '../toast.js';
 
 // куда ведёт карточка раздела (если есть что открыть)
-const SECTION_LINKS = { 0: '#/archive', 4: '#/facts', 5: '#/facts?tab=questions' };
+const SECTION_LINKS = { 0: '#/archive', 1: '#/systems?tab=logistics', 2: '#/systems?tab=processes', 3: '#/systems?tab=systems', 4: '#/systems?tab=matrix', 5: '#/facts?tab=conflicts' };
 
 export function createReportPage() {
   const st = { data: null, includeAuto: false, project: '', fresh: null };
@@ -52,7 +52,9 @@ export function createReportPage() {
       try {
         const file = kind === 'docx'
           ? await api.post('/report/docx', { include_auto: st.includeAuto, project: st.project.trim() })
-          : await api.post('/report/xlsx');
+          : kind === 'diagrams'
+            ? await api.post('/report/diagrams', { include_auto: st.includeAuto })
+            : await api.post('/report/xlsx');
         st.fresh = file.name;
         toast(`Готово: ${file.name}`, { action: { label: 'Скачать', href: file.url } });
         await load();
@@ -65,6 +67,8 @@ export function createReportPage() {
     if (!d) { mount(exportEl, h('div', { class: 'card' }, skeleton('100%', 180))); return; }
     const docxBtn = button({ label: 'Сформировать Word', icon: 'file-text', variant: 'primary', disabled: !d.can_export, onClick: () => build('docx', docxBtn) });
     const xlsxBtn = button({ label: 'Таблицы в Excel', icon: 'file-spreadsheet', variant: 'secondary', disabled: !d.can_export, onClick: () => build('xlsx', xlsxBtn) });
+    const dgBtn = button({ label: 'Схемы (draw.io, SVG)', icon: 'network', variant: 'secondary', disabled: !d.can_export, title: 'Архив со схемами в редактируемом виде', onClick: () => build('diagrams', dgBtn) });
+    const unreviewedFacts = d.counts.unreviewed_facts || 0;
     const unreviewed = d.counts.unreviewed;
     const files = d.files || [];
 
@@ -75,21 +79,24 @@ export function createReportPage() {
           h('h2', { class: 'card__title' }, 'Параметры выгрузки')),
         h('div', { class: 'stack', style: { gap: '16px' } },
           h('div', { class: 'stack', style: { gap: '8px' } },
-            checkEl({ label: 'Включить непроверенные требования (черновик)', checked: st.includeAuto, onChange: (v) => { st.includeAuto = v; renderExport(); } }),
+            checkEl({ label: 'Включить непроверенные факты (черновик)', checked: st.includeAuto, onChange: (v) => { st.includeAuto = v; renderExport(); } }),
+            !st.includeAuto && unreviewedFacts > 0 && h('p', { class: 'field__hint', style: { paddingLeft: '30px' } },
+              `Процессов, обменов и фактов ответственности без проверки: ${unreviewedFacts} — в схемы и разделы 2–5 они не попадут. `,
+              h('a', { href: '#/systems' }, 'Проверить')),
             !st.includeAuto && unreviewed > 0 && h('p', { class: 'field__hint', style: { paddingLeft: '30px' } },
               `${withNoun(unreviewed, ['требование ждёт', 'требования ждут', 'требований ждут'])} проверки и в отчёт ${unreviewed % 10 === 1 && unreviewed % 100 !== 11 ? 'не попадёт' : 'не попадут'}. `,
               h('a', { href: '#/facts' }, 'Перейти к ревью'))),
           field('Название проекта для титула', projectInput),
           h('p', { class: 'field__hint' }, 'Файлы сохраняются в папку: ', h('code', null, d.output_dir)),
           !d.can_export && notice({ tone: 'info', body: 'Архив пуст: сначала загрузите документы на экране «Архив и обработка».' }),
-          h('div', { class: 'row row--wrap', style: { gap: '10px' } }, docxBtn, xlsxBtn))),
+          h('div', { class: 'row row--wrap', style: { gap: '10px' } }, docxBtn, xlsxBtn, dgBtn))),
       h('section', { class: 'card', style: { marginTop: '16px' } },
         h('div', { class: 'card__head' },
           h('span', { class: 'card__icon' }, icon('archive', 18)),
           h('div', null, h('h2', { class: 'card__title' }, 'Готовые файлы'), h('p', { class: 'card__sub' }, files.length ? withNoun(files.length, ['файл', 'файла', 'файлов']) : 'пока нет'))),
         files.length
           ? h('ul', { class: 'files' }, files.map((f) => h('li', { class: `file${f.name === st.fresh ? ' is-fresh' : ''}` },
-            h('span', { class: 'file__icon' }, icon(f.name.endsWith('.xlsx') ? 'file-spreadsheet' : 'file-text', 18)),
+            h('span', { class: 'file__icon' }, icon(f.name.endsWith('.xlsx') ? 'file-spreadsheet' : f.name.endsWith('.zip') ? 'network' : 'file-text', 18)),
             h('div', { class: 'file__meta' }, h('div', { class: 'file__name truncate', title: f.name }, f.name), h('div', { class: 'cell-sub' }, `${fmtBytes(f.size)} · ${fmtDateTime(f.modified)}`)),
             h('a', { class: 'btn btn--soft btn--sm', href: f.url, download: f.name }, icon('download', 15), 'Скачать'))))
           : emptyState({ icon: 'file-text', title: 'Отчётов ещё не было', text: 'Сформируйте Word или Excel, и файл появится здесь.' })));

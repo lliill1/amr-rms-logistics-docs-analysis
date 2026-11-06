@@ -9,4 +9,11 @@ doc_rel_path;page;requirement;target
 02_EWM/ПР_EWM_v2.3.docx;34;RMS принимает транспортные задания от EWM;RMS
 ```
 
-Скрипт сравнения появится вместе с v2.
+Запуск:
+
+```
+python scripts\eval_requirements.py eval\requirements_gold.csv --details
+```
+
+Скрипт покажет точность (какая доля найденного моделью есть в эталоне), полноту (какая доля эталона найдена)
+и списки пропущенного и лишнего. Образец для вымышленного демо-архива — `requirements_gold.example.csv`.

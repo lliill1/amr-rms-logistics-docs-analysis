@@ -124,7 +124,7 @@ class PipelineTest(unittest.TestCase):
         self.assertIn("EWM или MES", all_cells)
         xlsx_path = report.build_xlsx(self.conn, out)
         wb = load_workbook(str(xlsx_path))
-        self.assertEqual(wb.sheetnames, ["Документы", "Требования", "Открытые вопросы"])
+        self.assertEqual(wb.sheetnames, ["Документы", "Требования", "Процессы", "Обмены", "Ответственность", "Противоречия", "Открытые вопросы"])
         self.assertEqual(wb["Требования"].max_row - 1, len(reqs))
 
 

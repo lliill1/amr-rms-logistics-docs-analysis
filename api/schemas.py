@@ -45,6 +45,8 @@ class AskRequest(BaseModel):
 
 class ExtractionRequest(BaseModel):
     limit: int = Field(default=20, ge=1)
+    # версия 2: какие виды фактов извлекать (requirements, processes, integration); пусто — все
+    kinds: list[Literal["requirements", "processes", "integration"]] = Field(default_factory=list)
 
 
 class RequirementPatch(BaseModel):

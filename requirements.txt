@@ -6,6 +6,7 @@ pyyaml>=6.0
 requests>=2.31
 numpy>=1.26
 pandas>=2.1
+pillow>=10.1          # версия 2: картинки схем в отчёте Word
 
 # Веб-интерфейс: API (FastAPI) + статический фронтенд из web/
 fastapi>=0.110

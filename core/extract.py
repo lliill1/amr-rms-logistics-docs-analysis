@@ -82,54 +82,40 @@ def candidate_chunks(conn: sqlite3.Connection, min_relevance: int = 1, doc_ids: 
     return [c for c in chunks if is_relevant_fragment(c["text"])]
 
 
+def save_requirements(conn: sqlite3.Connection, chunk: dict, items: list, threshold: float) -> dict:
+    """Проверяет цитаты и сохраняет требования одного фрагмента. Возвращает счётчики."""
+    st = {"found": 0, "accepted": 0, "rejected_quotes": 0}
+    for it in items:
+        if not isinstance(it, dict) or not it.get("text"):
+            continue
+        st["found"] += 1
+        score = quote_score(it.get("quote", ""), chunk["text"])
+        if score < threshold:
+            st["rejected_quotes"] += 1
+            continue
+        dup = one(conn, "SELECT id FROM requirements WHERE doc_id = ? AND lower(quote) = lower(?)",
+                  (chunk["doc_id"], it.get("quote", "")))
+        if dup:
+            continue
+        conn.execute(
+            """INSERT INTO requirements(code, doc_id, chunk_id, page, text, target, category, obligation, quote, quote_score)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (_next_code(conn), chunk["doc_id"], chunk["id"], chunk["page_from"], it["text"].strip(),
+             it.get("target") if it.get("target") in TARGETS else "Другое",
+             it.get("category") if it.get("category") in CATEGORIES else "Прочее",
+             it.get("obligation") if it.get("obligation") in OBLIGATIONS else "не указано",
+             it.get("quote", "").strip(), round(score, 3)))
+        st["accepted"] += 1
+    return st
+
+
 def extract_requirements(conn: sqlite3.Connection, settings: Settings, llm, doc_ids: list[int] | None = None,
                          redo: bool = False, progress: Callable[[int, int], None] | None = None,
                          stop: Callable[[], bool] | None = None) -> dict:
-    threshold = float(settings.get("extraction.quote_match_threshold", 0.9))
-    chunks = candidate_chunks(conn, int(settings.get("extraction.min_relevance", 1)), doc_ids, redo)
-    template = load_prompt("requirements")
-    stats = {"chunks": len(chunks), "found": 0, "accepted": 0, "rejected_quotes": 0, "errors": 0}
+    """Только требования (как в версии 1). Общий механизм для всех видов фактов — core/facts.py."""
+    from .facts import run_extraction  # здесь, чтобы не было циклического импорта
 
-    for i, c in enumerate(chunks, start=1):
-        if stop and stop():
-            break
-        if progress:
-            progress(i, len(chunks))
-        prompt = template.format(title=c["title"] or c["rel_path"], page=c["page_from"] or "?", text=c["text"])
-        try:
-            data = llm.chat_json(prompt, REQUIREMENTS_SCHEMA)
-            items = data.get("requirements", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
-        except Exception as e:  # noqa: BLE001
-            stats["errors"] += 1
-            conn.execute("INSERT OR REPLACE INTO extraction_log(chunk_id, kind, found, error) VALUES (?, 'requirements', 0, ?)",
-                         (c["id"], str(e)[:300]))
-            conn.commit()
-            continue
-
-        accepted = 0
-        for it in items:
-            if not isinstance(it, dict) or not it.get("text"):
-                continue
-            stats["found"] += 1
-            score = quote_score(it.get("quote", ""), c["text"])
-            if score < threshold:
-                stats["rejected_quotes"] += 1
-                continue
-            dup = one(conn, "SELECT id FROM requirements WHERE doc_id = ? AND lower(quote) = lower(?)",
-                      (c["doc_id"], it.get("quote", "")))
-            if dup:
-                continue
-            conn.execute(
-                """INSERT INTO requirements(code, doc_id, chunk_id, page, text, target, category, obligation, quote, quote_score)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (_next_code(conn), c["doc_id"], c["id"], c["page_from"], it["text"].strip(),
-                 it.get("target") if it.get("target") in TARGETS else "Другое",
-                 it.get("category") if it.get("category") in CATEGORIES else "Прочее",
-                 it.get("obligation") if it.get("obligation") in OBLIGATIONS else "не указано",
-                 it.get("quote", "").strip(), round(score, 3)))
-            accepted += 1
-        stats["accepted"] += accepted
-        conn.execute("INSERT OR REPLACE INTO extraction_log(chunk_id, kind, found, error) VALUES (?, 'requirements', ?, NULL)",
-                     (c["id"], accepted))
-        conn.commit()
+    stats = run_extraction(conn, settings, llm, kinds=["requirements"], doc_ids=doc_ids, redo=redo,
+                           progress=progress, stop=stop)
+    stats.pop("by_kind", None)
     return stats

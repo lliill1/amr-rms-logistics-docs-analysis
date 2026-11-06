@@ -155,7 +155,7 @@ class ApiTest(unittest.TestCase):
     def test_extraction_and_review(self):
         self.process()
         self.assertGreater(self.client.get("/api/extraction/pending").json()["pending"], 0)
-        stats = self.extract()["result"]
+        stats = self.extract()["result"]["by_kind"]["requirements"]   # версия 2: итоги по видам фактов
         self.assertGreater(stats["accepted"], 0)
         self.assertGreater(stats["rejected_quotes"], 0)     # «выдуманное» требование отброшено проверкой цитаты
         self.assertEqual(self.client.get("/api/extraction/pending").json()["pending"], 0)
@@ -211,7 +211,7 @@ class ApiTest(unittest.TestCase):
         self.assertTrue(s["can_export"])
         self.assertEqual(s["sections"][0]["state"], "готов")
         self.assertEqual(s["sections"][4]["state"], "черновик")
-        self.assertEqual(s["sections"][1]["tone"], "gray")
+        self.assertEqual(s["sections"][1]["state"], "черновик")       # версия 2: схема логистики из процессов
 
         docx = self.client.post("/api/report/docx", json={"include_auto": True, "project": "Тест"}).json()
         xlsx = self.client.post("/api/report/xlsx").json()

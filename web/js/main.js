@@ -9,6 +9,7 @@ import { createArchivePage } from './pages/archive.js';
 import { createAskPage } from './pages/ask.js';
 import { createFactsPage } from './pages/facts.js';
 import { createReportPage } from './pages/report.js';
+import { createSystemsPage } from './pages/systems.js';
 import { getTheme, toggleTheme } from './theme.js';
 import { toast } from './toast.js';
 
@@ -16,6 +17,7 @@ const ROUTES = [
   { path: '/archive', label: 'Архив и обработка', create: createArchivePage },
   { path: '/ask', label: 'Вопросы к архиву', create: createAskPage },
   { path: '/facts', label: 'Факты и ревью', create: createFactsPage },
+  { path: '/systems', label: 'Логистика и системы', create: createSystemsPage },
   { path: '/report', label: 'Отчёт', create: createReportPage },
 ];
 

@@ -95,6 +95,77 @@ CREATE TABLE IF NOT EXISTS open_questions (
     created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- ===== версия 2: процессы, обмены, ответственность, противоречия =====
+CREATE TABLE IF NOT EXISTS processes (
+    id            INTEGER PRIMARY KEY,
+    code          TEXT UNIQUE,              -- PR-001
+    doc_id        INTEGER REFERENCES documents(id) ON DELETE CASCADE,
+    chunk_id      INTEGER REFERENCES chunks(id) ON DELETE SET NULL,
+    page          INTEGER,
+    name          TEXT NOT NULL,
+    trigger       TEXT,                     -- что запускает процесс
+    initiator     TEXT,                     -- система или роль, которая инициирует перевозку
+    amr_role      TEXT,                     -- роботизирован | планируется | обсуждается | вручную
+    from_location TEXT,
+    to_location   TEXT,
+    cargo         TEXT,
+    steps         TEXT,                     -- JSON: [{"actor": "...", "action": "..."}]
+    quote         TEXT,
+    quote_score   REAL,
+    status        TEXT NOT NULL DEFAULT 'auto',
+    comment       TEXT,
+    created_at    TEXT DEFAULT (datetime('now')),
+    updated_at    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS interfaces (
+    id            INTEGER PRIMARY KEY,
+    code          TEXT UNIQUE,              -- IF-001
+    doc_id        INTEGER REFERENCES documents(id) ON DELETE CASCADE,
+    chunk_id      INTEGER REFERENCES chunks(id) ON DELETE SET NULL,
+    page          INTEGER,
+    source_system TEXT NOT NULL,
+    target_system TEXT NOT NULL,
+    message       TEXT NOT NULL,            -- что передаётся: транспортное задание, статус, подтверждение...
+    protocol      TEXT,                     -- если указан: VDA 5050, REST, IDoc, OPC UA...
+    trigger       TEXT,
+    quote         TEXT,
+    quote_score   REAL,
+    status        TEXT NOT NULL DEFAULT 'auto',
+    comment       TEXT,
+    created_at    TEXT DEFAULT (datetime('now')),
+    updated_at    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS responsibilities (
+    id            INTEGER PRIMARY KEY,
+    code          TEXT UNIQUE,              -- RS-001
+    doc_id        INTEGER REFERENCES documents(id) ON DELETE CASCADE,
+    chunk_id      INTEGER REFERENCES chunks(id) ON DELETE SET NULL,
+    page          INTEGER,
+    function      TEXT NOT NULL,            -- ключ функции из config/model.yaml
+    system        TEXT NOT NULL,
+    quote         TEXT,
+    quote_score   REAL,
+    status        TEXT NOT NULL DEFAULT 'auto',
+    comment       TEXT,
+    created_at    TEXT DEFAULT (datetime('now')),
+    updated_at    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS conflicts (
+    id          INTEGER PRIMARY KEY,
+    key         TEXT NOT NULL UNIQUE,       -- resp:initiate_transport, gap:resp:charging, gap:link:0 ...
+    kind        TEXT NOT NULL,              -- contradiction | revision | gap
+    title       TEXT NOT NULL,
+    details     TEXT,                       -- JSON: варианты с источниками
+    signature   TEXT,                       -- набор вариантов; изменился — решение пересматривается
+    status      TEXT NOT NULL DEFAULT 'open',  -- open | resolved | dismissed | question
+    resolution  TEXT,
+    question_id INTEGER REFERENCES open_questions(id) ON DELETE SET NULL,
+    updated_at  TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS extraction_log (
     chunk_id INTEGER NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
     kind     TEXT NOT NULL,                 -- requirements | processes | interfaces ...

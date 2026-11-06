@@ -11,15 +11,16 @@ import { jobEvents, jobs, startJob } from '../jobs.js';
 import { obligationPill, QUESTION_LABELS, questionStatusPill, reqStatusPill } from '../labels.js';
 import { confirmDialog, openDrawer } from '../overlay.js';
 import { toast, toastError } from '../toast.js';
+import { createConflictsPane } from './conflicts.js';
 
 const PAGE = 100;
 const Q_STATUSES = ['open', 'sent', 'answered', 'closed'];
 
 export function createFactsPage(ctx) {
   const st = {
-    tab: ctx.query.get('tab') === 'questions' ? 'questions' : 'requirements',
-    // извлечение
-    pending: null, limit: 20, resultDismissed: false,
+    tab: ['questions', 'conflicts'].includes(ctx.query.get('tab')) ? ctx.query.get('tab') : 'requirements',
+    // извлечение (версия 2: можно выбрать виды фактов)
+    pending: null, limit: 20, resultDismissed: false, kinds: ['requirements', 'processes', 'integration'],
     // требования
     reqs: [], reqTotal: 0, byStatus: {}, loadingReqs: true,
     fTargets: [], fStatuses: ['auto', 'confirmed', 'edited'], fText: '', shown: PAGE, activeId: null,
@@ -34,17 +35,18 @@ export function createFactsPage(ctx) {
   // ───────── каркас ─────────
   const tabsEl = tabs({
     label: 'Раздел', value: st.tab,
-    items: [{ value: 'requirements', label: 'Требования к AMR/RMS' }, { value: 'questions', label: 'Открытые вопросы', count: 0 }],
-    onChange: (v) => { st.tab = v; history.replaceState(null, '', v === 'questions' ? '#/facts?tab=questions' : '#/facts'); renderTab(); },
+    items: [{ value: 'requirements', label: 'Требования к AMR/RMS' }, { value: 'conflicts', label: 'Противоречия', count: 0 }, { value: 'questions', label: 'Открытые вопросы', count: 0 }],
+    onChange: (v) => { st.tab = v; history.replaceState(null, '', v === 'requirements' ? '#/facts' : `#/facts?tab=${v}`); renderTab(); },
   });
   const reqPane = h('div', { class: 'stack', style: { gap: '16px' } });
   const qPane = h('div', { class: 'stack', style: { gap: '16px' } });
+  const conflictsPane = createConflictsPane({ onCount: (n) => tabsEl.setCount('conflicts', n), onQuestion: () => loadQuestions() });
   const root = h('div', null,
     h('div', { class: 'page-head' },
       h('div', null, h('h1', { class: 'page-title' }, 'Факты и ревью'),
         h('p', { class: 'page-sub' }, 'Модель предлагает, аналитик подтверждает. В итоговый отчёт попадают только подтверждённые требования.')),
       h('div', { class: 'page-head__aside' }, tabsEl)),
-    reqPane, qPane);
+    reqPane, conflictsPane.el, qPane);
 
   function renderTab() {
     tabsEl.set(st.tab);
@@ -52,6 +54,8 @@ export function createFactsPage(ctx) {
     qPane.hidden = st.tab !== 'questions';
     reqPane.classList.toggle('hidden', st.tab !== 'requirements');
     qPane.classList.toggle('hidden', st.tab !== 'questions');
+    conflictsPane.el.hidden = st.tab !== 'conflicts';
+    conflictsPane.el.classList.toggle('hidden', st.tab !== 'conflicts');
   }
 
   // ═════════════════════════ ТРЕБОВАНИЯ ═════════════════════════
@@ -67,25 +71,38 @@ export function createFactsPage(ctx) {
     onInput: (e) => { st.limit = Math.max(1, parseInt(e.target.value, 10) || 1); },
   });
   const runBtn = button({
-    label: 'Извлечь требования', icon: 'sparkles', variant: 'primary',
+    label: 'Извлечь факты', icon: 'sparkles', variant: 'primary',
     onClick: () => withBusy(runBtn, async () => {
       try {
         st.resultDismissed = true;
-        await startJob(() => api.post('/extraction/run', { limit: Math.min(st.limit, st.pending?.pending || st.limit) }));
+        await startJob(() => api.post('/extraction/run', { limit: Math.min(st.limit, pendingSelected() || st.limit), kinds: st.kinds }));
       } catch (e) { toastError(e); }
     }),
+  });
+
+  // виды фактов (версия 2): сколько фрагментов ждут обработки хотя бы одним выбранным видом
+  const KIND_LABELS = { requirements: 'Требования', processes: 'Процессы', integration: 'Обмены и ответственность' };
+  const pendingSelected = () => {
+    const by = st.pending?.by_kind || { requirements: st.pending?.pending || 0 };
+    return Math.max(0, ...st.kinds.map((k) => by[k] || 0));
+  };
+  const kindChips = chipGroup({
+    label: 'Что извлекать', selected: st.kinds,
+    options: Object.entries(KIND_LABELS).map(([value, label]) => ({ value, label, count: 0 })),
+    onChange: (v) => { st.kinds = v; extractSig = ''; renderExtractCard(); },
   });
 
   let extractSig = '';
   function renderExtractCard() {
     const p = st.pending;
     const running = jobs.get().job?.state === 'running';
-    const count = p ? p.pending : 0;
-    const sig = `${p ? count : 'x'}/${running}/${llmOk()}`;
+    const count = p ? pendingSelected() : 0;
+    const sig = `${p ? JSON.stringify(p.by_kind) : 'x'}/${st.kinds.join()}/${running}/${llmOk()}`;
     if (sig === extractSig) return;
     extractSig = sig;
-    runBtn.disabled = !count || !llmOk() || running;
-    runBtn.title = running ? 'Дождитесь завершения текущей задачи' : !llmOk() ? 'Нужна запущенная Ollama с моделью' : '';
+    kindChips.setCounts(p?.by_kind || {});
+    runBtn.disabled = !count || !st.kinds.length || !llmOk() || running;
+    runBtn.title = running ? 'Дождитесь завершения текущей задачи' : !llmOk() ? 'Нужна запущенная Ollama с моделью' : !st.kinds.length ? 'Выберите, что извлекать' : '';
     limitInput.max = Math.max(1, count);
     limitInput.disabled = !count;
     if (count) st.limit = Math.min(st.limit, count);
@@ -95,9 +112,10 @@ export function createFactsPage(ctx) {
         h('span', { class: 'card__icon card__icon--accent' }, icon('sparkles', 18)),
         h('div', { style: { flex: '1 1 340px', minWidth: 0 } },
           h('div', null, 'Необработанных фрагментов про AMR/RMS: ', h('strong', { class: 'num', style: { fontSize: '18px' } }, p ? String(count) : '…')),
-          h('p', { class: 'card__sub', style: { marginTop: '4px' } }, 'На ноутбуке без видеокарты один фрагмент обрабатывается от нескольких секунд до минуты. Большой архив лучше обрабатывать частями или оставить на ночь.'),
+          h('p', { class: 'card__sub', style: { marginTop: '4px' } }, 'Каждый выбранный вид — отдельный запрос к модели на фрагмент. На ноутбуке без видеокарты один запрос идёт от нескольких секунд до минуты: большой архив обрабатывайте частями или оставьте на ночь.'),
+          h('div', { style: { marginTop: '10px' } }, kindChips),
           !llmOk() && h('p', { class: 'card__sub', style: { marginTop: '6px', color: 'var(--warning)' } }, 'Для извлечения нужна запущенная Ollama с моделью (см. статус вверху).')),
-        h('label', { class: 'field', style: { alignItems: 'flex-start' } }, h('span', { class: 'field__label' }, 'Обработать за раз'), limitInput),
+        h('label', { class: 'field', style: { alignItems: 'flex-start' } }, h('span', { class: 'field__label' }, 'Фрагментов за раз'), limitInput),
         runBtn));
   }
 
@@ -129,7 +147,10 @@ export function createFactsPage(ctx) {
       h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' } },
         [['Найдено кандидатов', r.found], ['Принято', r.accepted], ['Отброшено: цитата не подтверждена', r.rejected_quotes], ['Ошибок', r.errors]].map(([label, v]) =>
           h('div', null, h('div', { class: 'stat__label' }, label),
-            h('div', { class: 'num', style: { fontSize: '26px', fontWeight: 300, letterSpacing: '-0.03em', color: label === 'Ошибок' && v ? 'var(--danger)' : 'var(--text)' } }, String(v ?? 0)))))));
+            h('div', { class: 'num', style: { fontSize: '26px', fontWeight: 300, letterSpacing: '-0.03em', color: label === 'Ошибок' && v ? 'var(--danger)' : 'var(--text)' } }, String(v ?? 0))))),
+      r.by_kind && h('div', { class: 'row row--wrap', style: { gap: '8px', marginTop: '14px' } },
+        Object.entries(r.by_kind).map(([k, v]) => tag(`${KIND_LABELS[k] || k}: принято ${v.accepted}`, k === 'requirements')),
+        (r.by_kind.processes?.accepted || r.by_kind.integration?.accepted) ? h('a', { class: 'btn btn--soft btn--sm', href: '#/systems' }, icon('network', 15), 'Логистика и системы') : null)));
   }
 
   // ───────── таблица ревью ─────────
@@ -475,7 +496,7 @@ export function createFactsPage(ctx) {
   // ───────── подписки и старт ─────────
   cleanup.push(jobs.subscribe(() => { renderExtractJob(); renderExtractCard(); }));
   cleanup.push(jobEvents.on('finish', (job) => {
-    if (job.kind === 'extraction') { st.resultDismissed = false; renderExtractJob(); loadPending(); loadReqs({ silent: true }); }
+    if (job.kind === 'extraction') { st.resultDismissed = false; renderExtractJob(); loadPending(); loadReqs({ silent: true }); conflictsPane.load(); }
   }));
   cleanup.push(app.subscribe(() => renderExtractCard()));
 
@@ -489,6 +510,7 @@ export function createFactsPage(ctx) {
   loadPending();
   loadReqs();
   loadQuestions();
+  conflictsPane.load();
 
   return { el: root, destroy: () => cleanup.forEach((fn) => fn()) };
 }

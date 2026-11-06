@@ -6,6 +6,7 @@ from typing import Any
 
 from core import db
 from core.config import Settings, load_settings
+from core.facts import fill_missing_routes
 from core.llm import OllamaClient
 
 from .jobs import JobManager
@@ -20,7 +21,11 @@ class AppState:
         self.jobs = JobManager()
         self._status: dict | None = None
         self._status_at = 0.0
-        db.connect(self.settings.db_file).close()   # создать базу и схему при старте
+        conn = db.connect(self.settings.db_file)     # создать базу и схему при старте
+        try:
+            fill_missing_routes(conn)                # v2.1: маршруты процессов, которые модель не заполнила
+        finally:
+            conn.close()
 
     def connect(self):
         """Новое подключение на запрос или задачу: SQLite в режиме WAL спокойно переносит несколько подключений."""

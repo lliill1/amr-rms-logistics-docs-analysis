@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from core.db import one, rows
-from core.extract import candidate_chunks, extract_requirements
+from core.facts import ALL_KINDS, pending_chunks, pending_counts, run_extraction
 
 from .. import schemas
 from ..deps import get_conn, get_state, reject_nulls
@@ -32,33 +32,29 @@ def _req_out(r: dict, detail: bool = False) -> dict:
 
 @router.get("/extraction/pending")
 def pending(state: AppState = Depends(get_state), conn=Depends(get_conn)):
-    items = candidate_chunks(conn, int(state.settings.get("extraction.min_relevance", 1)))
-    return {"pending": len(items), "model_available": state.llm_or_none() is not None}
+    by_kind = pending_counts(conn, int(state.settings.get("extraction.min_relevance", 1)))
+    return {"pending": by_kind["requirements"], "by_kind": by_kind,
+            "any": max(by_kind.values()) if by_kind else 0, "model_available": state.llm_or_none() is not None}
 
 
 @router.post("/extraction/run", status_code=202)
-def run_extraction(body: ExtractionRequest, state: AppState = Depends(get_state), conn=Depends(get_conn)):
+def run_extraction_job(body: ExtractionRequest, state: AppState = Depends(get_state), conn=Depends(get_conn)):
     llm = state.llm_or_none()
     if llm is None:
         raise HTTPException(409, "Для извлечения нужна запущенная Ollama с моделью.")
-    items = candidate_chunks(conn, int(state.settings.get("extraction.min_relevance", 1)))
+    kinds = list(dict.fromkeys(body.kinds)) or ALL_KINDS
+    items = pending_chunks(conn, kinds, int(state.settings.get("extraction.min_relevance", 1)))
     if not items:
         raise HTTPException(409, "Необработанных фрагментов про AMR/RMS нет.")
     limit = body.limit
-    doc_ids = sorted({c["doc_id"] for c in items[:limit]})
 
     def run(progress):
         job_conn = state.connect()
-        counter = {"n": 0}
-
-        def on_progress(done: int, total: int) -> None:
-            counter["n"] = done
-            shown = min(total, limit)
-            progress("Извлечение требований", min(done, shown), shown)
-
         try:
-            return extract_requirements(job_conn, state.settings, llm, doc_ids=doc_ids, progress=on_progress,
-                                        stop=lambda: counter["n"] >= limit)
+            res = run_extraction(job_conn, state.settings, llm, kinds=kinds, limit=limit,
+                                 progress=lambda done, total: progress("Извлечение фактов", done, total))
+            res["kinds"] = kinds
+            return res
         finally:
             job_conn.close()
 

@@ -180,7 +180,9 @@ def rrf(*ranked: list[tuple[int, float]], k: int = 60) -> list[tuple[int, float]
 
 
 def search(conn: sqlite3.Connection, query: str, llm=None, top_k: int = 6, only_current: bool = True,
-           use_vectors: bool = True) -> list[Hit]:
+           use_vectors: bool = True, max_per_doc: int = 2) -> list[Hit]:
+    """Гибридный поиск. max_per_doc — сколько фрагментов одного документа попадает в выдачу (0 — без ограничения),
+    чтобы один большой документ не вытеснял остальные источники."""
     lists = [fts_search(conn, query, only_current=only_current)]
     if use_vectors and llm is not None:
         try:
@@ -189,7 +191,7 @@ def search(conn: sqlite3.Connection, query: str, llm=None, top_k: int = 6, only_
                 lists.append(vector_search(conn, qv[0], only_current=only_current))
         except Exception:  # noqa: BLE001 — без эмбеддингов работаем только на полнотексте
             pass
-    merged = rrf(*lists)[:top_k]
+    merged = rrf(*lists)
     if not merged:
         return []
     ids = [cid for cid, _ in merged]
@@ -197,4 +199,20 @@ def search(conn: sqlite3.Connection, query: str, llm=None, top_k: int = 6, only_
         SELECT c.id, c.doc_id, c.text, c.section, c.page_from, c.page_to,
                d.rel_path, d.title, d.is_current, d.approval, d.side
         FROM chunks c JOIN documents d ON d.id = c.doc_id WHERE c.id IN ({",".join("?" * len(ids))})""", ids)}
-    return [Hit(chunk_id=cid, score=s, **{k: v for k, v in meta[cid].items() if k != "id"}) for cid, s in merged if cid in meta]
+    picked: list[tuple[int, float]] = []
+    per_doc: dict[int, int] = {}
+    overflow: list[tuple[int, float]] = []
+    for cid, sc in merged:
+        if cid not in meta:
+            continue
+        d = meta[cid]["doc_id"]
+        if max_per_doc and per_doc.get(d, 0) >= max_per_doc:
+            overflow.append((cid, sc))
+            continue
+        per_doc[d] = per_doc.get(d, 0) + 1
+        picked.append((cid, sc))
+        if len(picked) >= top_k:
+            break
+    if len(picked) < top_k:              # других документов не нашлось — добираем из тех же
+        picked += overflow[: top_k - len(picked)]
+    return [Hit(chunk_id=cid, score=sc, **{k: v for k, v in meta[cid].items() if k != "id"}) for cid, sc in picked]
