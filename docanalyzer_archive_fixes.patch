@@ -1,0 +1,225 @@
+--- a/core/catalog.py	2026-11-12 20:11:37.736965142 +0000
++++ b/core/catalog.py	2026-11-12 20:11:53.998500737 +0000
+@@ -92,10 +92,14 @@
+     return found
+ 
+ 
+-def detect_date(name: str, head: str) -> str | None:
++def detect_date(name: str, head: str, path: str = "") -> str | None:
+     in_name = find_dates(name)
+     if in_name:
+         return max(in_name).isoformat()
++    # дата в названии архива или папки: «Технология от 22.12.2022.zip/Технология.docx»
++    in_path = find_dates(path)
++    if in_path:
++        return max(in_path).isoformat()
+     # дата рядом с «от», «дата» — обычно дата документа
+     m = re.search(r"(?:\bот\b|дата[^\n:]{0,20}:?)\s*(.{0,30})", head, re.IGNORECASE)
+     if m:
+@@ -170,17 +174,23 @@
+                customer_markers: list[str], contractor_markers: list[str]) -> Card:
+     name = PurePosixPath(rel_path).name
+     level, score = glossary.relevance(full_text + " " + rel_path)
++    doc_type = detect_type(rel_path, title or "", head_text)
++    doc_date = detect_date(name, head_text, rel_path)
++    fkey = family_key(rel_path)
++    if doc_type == "Протокол":
++        # протоколы разных дат — не редакции одного документа: каждый остаётся актуальным
++        fkey = f"{fkey} @ {doc_date or rel_path.lower()}"
+     return Card(
+         title=(title or PurePosixPath(rel_path).stem)[:300],
+-        doc_type=detect_type(rel_path, title or "", head_text),
+-        doc_date=detect_date(name, head_text),
++        doc_type=doc_type,
++        doc_date=doc_date,
+         revision=detect_revision(name, head_text),
+         approval=detect_approval(head_text),
+         side=detect_side(rel_path, head_text, customer_markers, contractor_markers),
+         subsystems=detect_subsystems(full_text[:200_000]),
+         relevance=level,
+         relevance_score=round(score, 1),
+-        family_key=family_key(rel_path),
++        family_key=fkey,
+     )
+ 
+ 
+--- a/core/ingest.py	2026-11-12 20:11:37.737117555 +0000
++++ b/core/ingest.py	2026-11-12 20:12:04.513214593 +0000
+@@ -18,6 +18,18 @@
+     ".vsd": "pdf", ".vsdx": "pdf",
+ }
+ SKIP_NAMES = {"thumbs.db", ".ds_store", "desktop.ini"}
++# файлы, которые сервис не читает: пропускаются ДО подсчёта хэша (записи встреч весят десятки гигабайт)
++MEDIA_EXTS = {".mp4", ".mkv", ".mov", ".avi", ".wmv", ".webm", ".m4v", ".mp3", ".m4a", ".wav", ".aac", ".ogg", ".flac", ".wma"}
++CAD_EXTS = {".dwg", ".dxf", ".dwl", ".dwl2", ".bak"}
++
++
++def skip_reason(path: Path) -> str | None:
++    ext = path.suffix.lower()
++    if ext in MEDIA_EXTS:
++        return "аудио/видео: в сервисе нет транскрибации — расшифруйте запись в текст и положите .txt рядом"
++    if ext in CAD_EXTS:
++        return "чертёж CAD: сервис его не читает — экспортируйте в PDF (для самой свежей версии это обязательно)"
++    return None
+ 
+ 
+ @dataclass
+@@ -75,22 +87,47 @@
+                 target.parent.mkdir(parents=True, exist_ok=True)
+                 with zf.open(info) as src, open(target, "wb") as dst:
+                     shutil.copyfileobj(src, dst)
+-    elif ext == ".7z":
++    elif ext in (".7z", ".rar"):
++        _extract_with_7zip_or_python(archive, dest, ext)
++    else:
++        raise RuntimeError(f"неизвестный формат архива {ext}")
++
++
++def find_7z() -> str | None:
++    """7-Zip умеет и .7z, и .rar (в том числе RAR5) — отдельный unrar не нужен."""
++    for name in ("7z", "7za", "7zz"):
++        found = shutil.which(name)
++        if found:
++            return found
++    for candidate in (r"C:\Program Files\7-Zip\7z.exe", r"C:\Program Files (x86)\7-Zip\7z.exe"):
++        if Path(candidate).exists():
++            return candidate
++    return None
++
++
++def _extract_with_7zip_or_python(archive: Path, dest: Path, ext: str) -> None:
++    seven = find_7z()
++    if seven:
++        # -y: не спрашивать; -o: папка назначения (без пробела после -o)
++        r = subprocess.run([seven, "x", "-y", f"-o{dest}", str(archive)], capture_output=True, timeout=3600)
++        if r.returncode in (0, 1):  # 1 — предупреждения, файлы распакованы
++            return
++        err = (r.stderr or r.stdout or b"").decode("utf-8", "replace")[-300:]
++        raise RuntimeError(f"7-Zip не смог распаковать: {err}")
++    if ext == ".7z":
+         try:
+             import py7zr  # type: ignore
+         except ImportError as e:
+-            raise RuntimeError("для .7z установите пакет py7zr или распакуйте архив вручную") from e
++            raise RuntimeError("для .7z установите 7-Zip (7-zip.org) или пакет py7zr") from e
+         with py7zr.SevenZipFile(archive) as z:
+             z.extractall(dest)
+-    elif ext == ".rar":
+-        try:
+-            import rarfile  # type: ignore
+-        except ImportError as e:
+-            raise RuntimeError("для .rar установите пакет rarfile (и unrar) или распакуйте архив вручную") from e
+-        with rarfile.RarFile(archive) as r:
+-            r.extractall(dest)
+-    else:
+-        raise RuntimeError(f"неизвестный формат архива {ext}")
++        return
++    try:
++        import rarfile  # type: ignore
++    except ImportError as e:
++        raise RuntimeError("для .rar установите 7-Zip (7-zip.org) и добавьте его в PATH") from e
++    with rarfile.RarFile(archive) as r:
++        r.extractall(dest)
+ 
+ 
+ def find_soffice(configured: str | None = None) -> str | None:
+@@ -139,7 +176,11 @@
+         report.skipped += sub.skipped
+         return report
+     if source.is_file():
+-        report.files.append(FoundFile(_prefix + source.name, source))
++        reason = skip_reason(source)
++        if reason:
++            report.skipped.append((_prefix + source.name, reason))
++        else:
++            report.files.append(FoundFile(_prefix + source.name, source))
+         return report
+ 
+     for dirpath, _dirs, filenames in os.walk(source):
+@@ -156,5 +197,9 @@
+                 report.files += sub.files
+                 report.skipped += sub.skipped
+             else:
+-                report.files.append(FoundFile(rel, p))
++                reason = skip_reason(p)
++                if reason:
++                    report.skipped.append((rel, reason))
++                else:
++                    report.files.append(FoundFile(rel, p))
+     return report
+--- a/core/llm.py	2026-11-12 20:11:37.737130161 +0000
++++ b/core/llm.py	2026-11-12 21:17:51.699715233 +0000
+@@ -31,6 +31,7 @@
+         self.temperature = temperature
+         self.num_ctx = num_ctx
+         self.timeout = timeout
++        self.embed_ctx = 8192   # bge-m3 поддерживает до 8192 токенов
+         # прокси из окружения Windows не должен перехватывать запросы к локальной модели
+         self.session = requests.Session()
+         self.session.trust_env = False
+@@ -90,11 +91,36 @@
+         return parse_json(self.chat(prompt, schema=schema))
+ 
+     # --- эмбеддинги ---
+-    def embed(self, texts: list[str], batch: int = 16) -> np.ndarray:
++    def _embed_batch(self, texts: list[str]) -> list[list[float]]:
++        payload = {"model": self.embed_model, "input": texts, "truncate": True,
++                   "options": {"num_ctx": self.embed_ctx}}
++        return self._post("/api/embed", payload).get("embeddings", [])
++
++    def _embed_one(self, text: str) -> list[float]:
++        """Один текст; если Ollama отвечает «слишком длинный вход» (413) — укорачиваем и пробуем снова."""
++        for limit in (len(text), 3000, 1500, 700, 300):
++            try:
++                vecs = self._embed_batch([text[:limit]])
++                if vecs:
++                    return vecs[0]
++            except LLMError as e:
++                if "413" not in str(e) and "context length" not in str(e):
++                    raise
++        raise LLMError("не удалось посчитать эмбеддинг даже для сильно укороченного текста")
++
++    def embed(self, texts: list[str], batch: int = 8) -> np.ndarray:
+         vectors: list[list[float]] = []
+         for i in range(0, len(texts), batch):
+-            data = self._post("/api/embed", {"model": self.embed_model, "input": texts[i:i + batch]})
+-            vectors.extend(data.get("embeddings", []))
++            part = texts[i:i + batch]
++            try:
++                vecs = self._embed_batch(part)
++                if len(vecs) != len(part):
++                    raise LLMError("число векторов не совпало с числом текстов")
++            except LLMError as e:
++                if "413" not in str(e) and "context length" not in str(e) and "не совпало" not in str(e):
++                    raise
++                vecs = [self._embed_one(t) for t in part]   # один проблемный фрагмент не должен ронять весь архив
++            vectors.extend(vecs)
+         arr = np.asarray(vectors, dtype=np.float32)
+         if arr.size == 0:
+             return arr.reshape(0, 0)
+--- a/core/pipeline.py	2026-11-12 20:11:37.737355866 +0000
++++ b/core/pipeline.py	2026-11-12 20:11:53.998622887 +0000
+@@ -46,6 +46,13 @@
+     report = collect_files(Path(source), work)
+     stats.found = len(report.files)
+     stats.skipped += report.skipped
++    cad = [f for f, r in report.skipped if r.startswith("чертёж CAD")]
++    if cad:
++        stats.messages.append(f"Пропущено чертежей CAD: {len(cad)} (например, {cad[-1]}). Если среди них есть более новая "
++                              "версия, чем обработанные PDF, экспортируйте её в PDF — иначе актуальной будет считаться старая.")
++    media = [f for f, r in report.skipped if r.startswith("аудио/видео")]
++    if media:
++        stats.messages.append(f"Пропущено записей встреч (аудио/видео): {len(media)}. Для их анализа нужна транскрибация.")
+     soffice = find_soffice(settings.get("libreoffice.soffice_path") or None)
+     if soffice is None and any(f.path.suffix.lower() in CONVERT_MAP for f in report.files):
+         stats.messages.append("LibreOffice не найден: файлы .doc/.xls/.ppt/.vsd не будут прочитаны. "
+--- a/requirements.txt	2026-11-12 20:11:37.746228702 +0000
++++ b/requirements.txt	2026-11-12 20:11:53.998711512 +0000
+@@ -6,6 +6,7 @@
+ requests>=2.31
+ numpy>=1.26
+ pandas>=2.1
++py7zr>=0.21          # запасной вариант для .7z, если не установлен 7-Zip
+ pillow>=10.1          # версия 2: картинки схем в отчёте Word
+ 
+ # Веб-интерфейс: API (FastAPI) + статический фронтенд из web/

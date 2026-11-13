@@ -18,6 +18,18 @@ CONVERT_MAP = {
     ".vsd": "pdf", ".vsdx": "pdf",
 }
 SKIP_NAMES = {"thumbs.db", ".ds_store", "desktop.ini"}
+# файлы, которые сервис не читает: пропускаются ДО подсчёта хэша (записи встреч весят десятки гигабайт)
+MEDIA_EXTS = {".mp4", ".mkv", ".mov", ".avi", ".wmv", ".webm", ".m4v", ".mp3", ".m4a", ".wav", ".aac", ".ogg", ".flac", ".wma"}
+CAD_EXTS = {".dwg", ".dxf", ".dwl", ".dwl2", ".bak"}
+
+
+def skip_reason(path: Path) -> str | None:
+    ext = path.suffix.lower()
+    if ext in MEDIA_EXTS:
+        return "аудио/видео: в сервисе нет транскрибации — расшифруйте запись в текст и положите .txt рядом"
+    if ext in CAD_EXTS:
+        return "чертёж CAD: сервис его не читает — экспортируйте в PDF (для самой свежей версии это обязательно)"
+    return None
 
 
 @dataclass
@@ -75,22 +87,47 @@ def extract_archive(archive: Path, dest: Path) -> None:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with zf.open(info) as src, open(target, "wb") as dst:
                     shutil.copyfileobj(src, dst)
-    elif ext == ".7z":
+    elif ext in (".7z", ".rar"):
+        _extract_with_7zip_or_python(archive, dest, ext)
+    else:
+        raise RuntimeError(f"неизвестный формат архива {ext}")
+
+
+def find_7z() -> str | None:
+    """7-Zip умеет и .7z, и .rar (в том числе RAR5) — отдельный unrar не нужен."""
+    for name in ("7z", "7za", "7zz"):
+        found = shutil.which(name)
+        if found:
+            return found
+    for candidate in (r"C:\Program Files\7-Zip\7z.exe", r"C:\Program Files (x86)\7-Zip\7z.exe"):
+        if Path(candidate).exists():
+            return candidate
+    return None
+
+
+def _extract_with_7zip_or_python(archive: Path, dest: Path, ext: str) -> None:
+    seven = find_7z()
+    if seven:
+        # -y: не спрашивать; -o: папка назначения (без пробела после -o)
+        r = subprocess.run([seven, "x", "-y", f"-o{dest}", str(archive)], capture_output=True, timeout=3600)
+        if r.returncode in (0, 1):  # 1 — предупреждения, файлы распакованы
+            return
+        err = (r.stderr or r.stdout or b"").decode("utf-8", "replace")[-300:]
+        raise RuntimeError(f"7-Zip не смог распаковать: {err}")
+    if ext == ".7z":
         try:
             import py7zr  # type: ignore
         except ImportError as e:
-            raise RuntimeError("для .7z установите пакет py7zr или распакуйте архив вручную") from e
+            raise RuntimeError("для .7z установите 7-Zip (7-zip.org) или пакет py7zr") from e
         with py7zr.SevenZipFile(archive) as z:
             z.extractall(dest)
-    elif ext == ".rar":
-        try:
-            import rarfile  # type: ignore
-        except ImportError as e:
-            raise RuntimeError("для .rar установите пакет rarfile (и unrar) или распакуйте архив вручную") from e
-        with rarfile.RarFile(archive) as r:
-            r.extractall(dest)
-    else:
-        raise RuntimeError(f"неизвестный формат архива {ext}")
+        return
+    try:
+        import rarfile  # type: ignore
+    except ImportError as e:
+        raise RuntimeError("для .rar установите 7-Zip (7-zip.org) и добавьте его в PATH") from e
+    with rarfile.RarFile(archive) as r:
+        r.extractall(dest)
 
 
 def find_soffice(configured: str | None = None) -> str | None:
@@ -139,7 +176,11 @@ def collect_files(source: Path, work_dir: Path, _prefix: str = "", _depth: int =
         report.skipped += sub.skipped
         return report
     if source.is_file():
-        report.files.append(FoundFile(_prefix + source.name, source))
+        reason = skip_reason(source)
+        if reason:
+            report.skipped.append((_prefix + source.name, reason))
+        else:
+            report.files.append(FoundFile(_prefix + source.name, source))
         return report
 
     for dirpath, _dirs, filenames in os.walk(source):
@@ -156,5 +197,9 @@ def collect_files(source: Path, work_dir: Path, _prefix: str = "", _depth: int =
                 report.files += sub.files
                 report.skipped += sub.skipped
             else:
-                report.files.append(FoundFile(rel, p))
+                reason = skip_reason(p)
+                if reason:
+                    report.skipped.append((rel, reason))
+                else:
+                    report.files.append(FoundFile(rel, p))
     return report

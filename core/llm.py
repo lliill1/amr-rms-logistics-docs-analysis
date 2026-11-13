@@ -31,6 +31,7 @@ class OllamaClient:
         self.temperature = temperature
         self.num_ctx = num_ctx
         self.timeout = timeout
+        self.embed_ctx = 8192   # bge-m3 поддерживает до 8192 токенов
         # прокси из окружения Windows не должен перехватывать запросы к локальной модели
         self.session = requests.Session()
         self.session.trust_env = False
@@ -90,11 +91,36 @@ class OllamaClient:
         return parse_json(self.chat(prompt, schema=schema))
 
     # --- эмбеддинги ---
-    def embed(self, texts: list[str], batch: int = 16) -> np.ndarray:
+    def _embed_batch(self, texts: list[str]) -> list[list[float]]:
+        payload = {"model": self.embed_model, "input": texts, "truncate": True,
+                   "options": {"num_ctx": self.embed_ctx}}
+        return self._post("/api/embed", payload).get("embeddings", [])
+
+    def _embed_one(self, text: str) -> list[float]:
+        """Один текст; если Ollama отвечает «слишком длинный вход» (413) — укорачиваем и пробуем снова."""
+        for limit in (len(text), 3000, 1500, 700, 300):
+            try:
+                vecs = self._embed_batch([text[:limit]])
+                if vecs:
+                    return vecs[0]
+            except LLMError as e:
+                if "413" not in str(e) and "context length" not in str(e):
+                    raise
+        raise LLMError("не удалось посчитать эмбеддинг даже для сильно укороченного текста")
+
+    def embed(self, texts: list[str], batch: int = 8) -> np.ndarray:
         vectors: list[list[float]] = []
         for i in range(0, len(texts), batch):
-            data = self._post("/api/embed", {"model": self.embed_model, "input": texts[i:i + batch]})
-            vectors.extend(data.get("embeddings", []))
+            part = texts[i:i + batch]
+            try:
+                vecs = self._embed_batch(part)
+                if len(vecs) != len(part):
+                    raise LLMError("число векторов не совпало с числом текстов")
+            except LLMError as e:
+                if "413" not in str(e) and "context length" not in str(e) and "не совпало" not in str(e):
+                    raise
+                vecs = [self._embed_one(t) for t in part]   # один проблемный фрагмент не должен ронять весь архив
+            vectors.extend(vecs)
         arr = np.asarray(vectors, dtype=np.float32)
         if arr.size == 0:
             return arr.reshape(0, 0)
