@@ -46,6 +46,13 @@ def ingest_source(conn: sqlite3.Connection, settings: Settings, source: Path, pr
     report = collect_files(Path(source), work)
     stats.found = len(report.files)
     stats.skipped += report.skipped
+    cad = [f for f, r in report.skipped if r.startswith("чертёж CAD")]
+    if cad:
+        stats.messages.append(f"Пропущено чертежей CAD: {len(cad)} (например, {cad[-1]}). Если среди них есть более новая "
+                              "версия, чем обработанные PDF, экспортируйте её в PDF — иначе актуальной будет считаться старая.")
+    media = [f for f, r in report.skipped if r.startswith("аудио/видео")]
+    if media:
+        stats.messages.append(f"Пропущено записей встреч (аудио/видео): {len(media)}. Для их анализа нужна транскрибация.")
     soffice = find_soffice(settings.get("libreoffice.soffice_path") or None)
     if soffice is None and any(f.path.suffix.lower() in CONVERT_MAP for f in report.files):
         stats.messages.append("LibreOffice не найден: файлы .doc/.xls/.ppt/.vsd не будут прочитаны. "
