@@ -5,6 +5,7 @@ import hashlib
 import os
 import shutil
 import subprocess
+import unicodedata
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -18,6 +19,15 @@ CONVERT_MAP = {
     ".vsd": "pdf", ".vsdx": "pdf",
 }
 SKIP_NAMES = {"thumbs.db", ".ds_store", "desktop.ini"}
+SKIP_DIRS = {"__macosx"}          # служебная папка, которую macOS кладёт в zip
+
+
+def _is_service_file(rel: str) -> bool:
+    """Служебные файлы: Thumbs.db, .DS_Store, «._имя» (метаданные macOS), ~$ (временные файлы Word), папка __MACOSX."""
+    parts = PurePosixPath(rel.replace("\\", "/")).parts
+    name = parts[-1].lower() if parts else ""
+    return (name in SKIP_NAMES or name.startswith(("~$", "._"))
+            or any(p.lower() in SKIP_DIRS for p in parts[:-1]))
 
 
 @dataclass
@@ -41,14 +51,23 @@ def sha256_of(path: Path) -> str:
 
 
 def _zip_member_name(info: zipfile.ZipInfo) -> str:
-    """Архивы, созданные в русской Windows, хранят имена в cp866 без флага UTF-8."""
+    """Имя файла в zip. Без флага UTF-8 Python читает имя как cp437, поэтому берём исходные байты и угадываем:
+    архивы macOS/Linux хранят UTF-8 без флага, архивы русской Windows — cp866. Буквы приводим к NFC:
+    macOS пишет «й» как «и» + знак краткой, и такое имя иначе не находится по запросу."""
     name = info.filename
     if not info.flag_bits & 0x800:
         try:
-            name = name.encode("cp437").decode("cp866")
-        except (UnicodeEncodeError, UnicodeDecodeError):
-            pass
-    return name
+            raw = name.encode("cp437")
+        except UnicodeEncodeError:
+            raw = None
+        if raw is not None:
+            for encoding in ("utf-8", "cp866"):         # cp866 читает любые байты, поэтому он последний
+                try:
+                    name = raw.decode(encoding)
+                    break
+                except UnicodeDecodeError:
+                    continue
+    return unicodedata.normalize("NFC", name)
 
 
 def _safe_target(root: Path, member: str) -> Path | None:
@@ -146,7 +165,7 @@ def collect_files(source: Path, work_dir: Path, _prefix: str = "", _depth: int =
         for fn in sorted(filenames):
             p = Path(dirpath) / fn
             rel = _prefix + p.relative_to(source).as_posix()
-            if fn.lower() in SKIP_NAMES or fn.startswith("~$"):
+            if _is_service_file(rel):
                 continue
             if p.suffix.lower() in ARCHIVE_EXTS:
                 if _depth >= 5:
