@@ -92,14 +92,10 @@ def find_dates(text: str) -> list[date]:
     return found
 
 
-def detect_date(name: str, head: str, path: str = "") -> str | None:
+def detect_date(name: str, head: str) -> str | None:
     in_name = find_dates(name)
     if in_name:
         return max(in_name).isoformat()
-    # дата в названии архива или папки: «Технология от 22.12.2022.zip/Технология.docx»
-    in_path = find_dates(path)
-    if in_path:
-        return max(in_path).isoformat()
     # дата рядом с «от», «дата» — обычно дата документа
     m = re.search(r"(?:\bот\b|дата[^\n:]{0,20}:?)\s*(.{0,30})", head, re.IGNORECASE)
     if m:
@@ -174,23 +170,17 @@ def build_card(rel_path: str, title: str | None, full_text: str, head_text: str,
                customer_markers: list[str], contractor_markers: list[str]) -> Card:
     name = PurePosixPath(rel_path).name
     level, score = glossary.relevance(full_text + " " + rel_path)
-    doc_type = detect_type(rel_path, title or "", head_text)
-    doc_date = detect_date(name, head_text, rel_path)
-    fkey = family_key(rel_path)
-    if doc_type == "Протокол":
-        # протоколы разных дат — не редакции одного документа: каждый остаётся актуальным
-        fkey = f"{fkey} @ {doc_date or rel_path.lower()}"
     return Card(
         title=(title or PurePosixPath(rel_path).stem)[:300],
-        doc_type=doc_type,
-        doc_date=doc_date,
+        doc_type=detect_type(rel_path, title or "", head_text),
+        doc_date=detect_date(name, head_text),
         revision=detect_revision(name, head_text),
         approval=detect_approval(head_text),
         side=detect_side(rel_path, head_text, customer_markers, contractor_markers),
         subsystems=detect_subsystems(full_text[:200_000]),
         relevance=level,
         relevance_score=round(score, 1),
-        family_key=fkey,
+        family_key=family_key(rel_path),
     )
 
 

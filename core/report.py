@@ -100,7 +100,7 @@ def build_docx(conn: sqlite3.Connection, out_dir: Path, include_auto: bool = Fal
         _table(doc, ["Документ", "Заменён документом"], [[d["rel_path"], d["superseded_by_path"] or "—"] for d in outdated], [12, 12])
     if problems:
         doc.add_heading("1.3. Документы, требующие ручной обработки", 2)
-        reason = {"needs_ocr": "скан, нужен OCR", "unsupported": "формат не поддерживается", "error": "ошибка чтения"}
+        reason = {"needs_ocr": "скан: текст не получен (нужен OCR)", "unsupported": "формат не поддерживается", "error": "ошибка чтения"}
         _table(doc, ["Документ", "Причина"], [[d["rel_path"], reason.get(d["status"], d["status"]) + (f": {d['error']}" if d["error"] else "")]
                                               for d in problems], [12, 12])
 

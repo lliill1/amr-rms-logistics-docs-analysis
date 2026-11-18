@@ -174,7 +174,8 @@ export function createArchivePage(ctx) {
   function resultCard(r) {
     const items = [
       ['Найдено файлов', r.found], ['Новых', r.added], ['Повторов', r.duplicates], ['Прочитано', r.parsed],
-      ['Сканов', r.needs_ocr], ['Неподдерживаемых', r.unsupported], ['Ошибок', r.errors], ['Устаревших редакций', r.superseded],
+      ['Из них через OCR', r.ocr_docs ?? 0], ...(r.reprocessed ? [['Перечитано сканов', r.reprocessed]] : []),
+      ['Сканов без текста', r.needs_ocr], ['Неподдерживаемых', r.unsupported], ['Ошибок', r.errors], ['Устаревших редакций', r.superseded],
     ];
     return h('section', { class: 'card', style: { marginTop: '16px' }, 'aria-label': 'Итог обработки' },
       h('div', { class: 'card__head' },
@@ -185,7 +186,7 @@ export function createArchivePage(ctx) {
       h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '12px' } },
         items.map(([label, v]) => h('div', null,
           h('div', { class: 'stat__label' }, label),
-          h('div', { class: 'num', style: { fontSize: '26px', fontWeight: 300, letterSpacing: '-0.03em', color: (label === 'Ошибок' || label === 'Сканов') && v ? 'var(--warning)' : 'var(--text)' } }, String(v ?? 0))))),
+          h('div', { class: 'num', style: { fontSize: '26px', fontWeight: 300, letterSpacing: '-0.03em', color: (label === 'Ошибок' || label === 'Сканов без текста') && v ? 'var(--warning)' : 'var(--text)' } }, String(v ?? 0))))),
       r.messages?.length ? h('div', { class: 'stack', style: { marginTop: '16px', gap: '8px' } }, r.messages.map((m) => notice({ tone: 'warning', body: m }))) : null,
       r.skipped?.length ? h('details', { class: 'disclosure', style: { marginTop: '16px' } },
         h('summary', null, icon('archive', 17), `Пропущено: ${r.skipped.length}`, icon('chevron-down', 16)),
@@ -283,7 +284,9 @@ export function createArchivePage(ctx) {
       h('td', null, d.is_current
         ? pill('да', 'success', { dot: false })
         : pill('нет', 'warning', { dot: false, title: d.superseded_by_path ? `Заменён: ${d.superseded_by_path}` : '' })),
-      h('td', null, docStatusPill(d.status)));
+      h('td', null, h('div', { class: 'row row--wrap', style: { gap: '4px' } },
+        docStatusPill(d.status),
+        d.ocr_pages > 0 ? pill('OCR', 'info', { dot: false, title: `Текст ${d.ocr_pages} стр. получен распознаванием: возможны ошибки в словах` }) : null)));
   }
 
   function renderTable() {

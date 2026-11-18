@@ -47,7 +47,7 @@ if run or uploaded:
             stats = pipeline.run_all(conn, settings, src, llm=llm_or_none(), progress=progress)
             status.update(label="Обработка завершена", state="complete")
         st.success(f"Найдено файлов: {stats.found}. Новых: {stats.added}, повторов: {stats.duplicates}. "
-                   f"Прочитано: {stats.parsed}, сканов: {stats.needs_ocr}, неподдерживаемых: {stats.unsupported}, "
+                   f"Прочитано: {stats.parsed} (через OCR: {stats.ocr_docs}), сканов без текста: {stats.needs_ocr}, неподдерживаемых: {stats.unsupported}, "
                    f"ошибок: {stats.errors}. Устаревших редакций: {stats.superseded}.")
         for m in stats.messages:
             st.warning(m)
@@ -144,7 +144,7 @@ if changes and st.button("Сохранить правки карточек", typ
 problems = [d for d in docs if d["status"] in ("needs_ocr", "unsupported", "error")]
 if problems:
     with st.expander(f"Документы, требующие ручной обработки: {len(problems)}"):
-        reason = {"needs_ocr": "скан без текста (OCR — в следующей версии)", "unsupported": "формат не поддерживается",
+        reason = {"needs_ocr": "скан: текст не получен (нужен OCR, см. README)", "unsupported": "формат не поддерживается",
                   "error": "ошибка чтения"}
         st.dataframe(pd.DataFrame([{"Документ": d["rel_path"], "Причина": reason[d["status"]], "Подробности": d["error"]}
                                    for d in problems]), hide_index=True, use_container_width=True)

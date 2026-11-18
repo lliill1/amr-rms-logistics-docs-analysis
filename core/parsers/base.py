@@ -21,7 +21,8 @@ class ParsedDoc:
     blocks: list[Block] = field(default_factory=list)
     pages: int | None = None
     title: str | None = None
-    needs_ocr: bool = False      # текста почти нет — вероятно, скан
+    needs_ocr: bool = False      # текста почти нет — вероятно, скан, а распознать его не удалось
+    ocr_pages: int = 0           # на скольких страницах текст получен распознаванием (OCR)
     meta: dict = field(default_factory=dict)
 
     @property

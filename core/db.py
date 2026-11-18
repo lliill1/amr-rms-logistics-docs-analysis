@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS documents (
     status          TEXT NOT NULL DEFAULT 'new',   -- new | parsed | needs_ocr | unsupported | error
     error           TEXT,
     pages           INTEGER,
+    ocr_pages       INTEGER DEFAULT 0,      -- сколько страниц распознано OCR (текст сканов и картинок в PDF)
     -- карточка документа
     title           TEXT,
     doc_type        TEXT,
@@ -194,7 +195,16 @@ def connect(db_file: Path | str) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL") if str(db_file) != ":memory:" else None
     conn.executescript(SCHEMA)
+    _migrate(conn)
     return conn
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Доводит базу, созданную прежними версиями, до текущей схемы (CREATE IF NOT EXISTS колонок не добавляет)."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(documents)")}
+    if "ocr_pages" not in cols:
+        conn.execute("ALTER TABLE documents ADD COLUMN ocr_pages INTEGER DEFAULT 0")
+        conn.commit()
 
 
 def rows(conn: sqlite3.Connection, sql: str, params: tuple | dict = ()) -> list[dict]:

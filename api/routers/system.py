@@ -7,6 +7,7 @@ from .. import schemas
 from ..deps import get_state
 from ..state import AppState
 from core.extract import CATEGORIES, OBLIGATIONS, TARGETS
+from core import ocr
 from core.facts import KINDS
 from core.vocab import load_vocab
 
@@ -31,6 +32,7 @@ def status(refresh: bool = False, state: AppState = Depends(get_state)):
         "pull_commands": [f"ollama pull {m}" for m in s.get("missing", [])] if kind == "missing_models" else [],
         "chat_model": getattr(llm, "chat_model", None),
         "embed_model": getattr(llm, "embed_model", None),
+        "ocr": ocr.get_engine(state.settings)[1].to_dict(),
     }
 
 

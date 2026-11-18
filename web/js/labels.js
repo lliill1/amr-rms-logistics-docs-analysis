@@ -5,7 +5,7 @@ import { pill } from './components.js';
 const DOC_STATUS = {
   parsed: ['прочитан', 'success'],
   new: ['в очереди', null],
-  needs_ocr: ['скан без текста', 'warning'],
+  needs_ocr: ['скан: текст не получен', 'warning'],
   unsupported: ['формат не поддерживается', 'warning'],
   error: ['ошибка чтения', 'danger'],
 };

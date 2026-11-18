@@ -10,13 +10,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from . import catalog, index
+from . import catalog, index, ocr
 from .config import Settings
 from .db import one, rows
 from .ingest import CONVERT_MAP, collect_files, convert_with_libreoffice, find_soffice, sha256_of
 from .parsers import SUPPORTED_EXTS, UnsupportedFormat, parse_file
 
 Progress = Callable[[str, int, int], None]  # (этап, сделано, всего)
+
+OCR_STAGE = "Распознавание сканов (OCR)"
+OCR_EMPTY_MARK = "OCR: на страницах текст не найден"   # отметка: распознавали, но текста нет — повторно не пробуем
 
 
 @dataclass
@@ -25,7 +28,10 @@ class RunStats:
     added: int = 0
     duplicates: int = 0
     parsed: int = 0
-    needs_ocr: int = 0
+    needs_ocr: int = 0           # сканы, текст которых получить не удалось (нет OCR или на страницах пусто)
+    ocr_docs: int = 0            # документы, где часть текста получена распознаванием
+    ocr_pages: int = 0           # страниц, распознанных OCR
+    reprocessed: int = 0         # ранее «нераспознанные» сканы, прочитанные заново после подключения OCR
     unsupported: int = 0
     errors: int = 0
     superseded: int = 0
@@ -46,18 +52,15 @@ def ingest_source(conn: sqlite3.Connection, settings: Settings, source: Path, pr
     report = collect_files(Path(source), work)
     stats.found = len(report.files)
     stats.skipped += report.skipped
-    cad = [f for f, r in report.skipped if r.startswith("чертёж CAD")]
-    if cad:
-        stats.messages.append(f"Пропущено чертежей CAD: {len(cad)} (например, {cad[-1]}). Если среди них есть более новая "
-                              "версия, чем обработанные PDF, экспортируйте её в PDF — иначе актуальной будет считаться старая.")
-    media = [f for f, r in report.skipped if r.startswith("аудио/видео")]
-    if media:
-        stats.messages.append(f"Пропущено записей встреч (аудио/видео): {len(media)}. Для их анализа нужна транскрибация.")
     soffice = find_soffice(settings.get("libreoffice.soffice_path") or None)
     if soffice is None and any(f.path.suffix.lower() in CONVERT_MAP for f in report.files):
         stats.messages.append("LibreOffice не найден: файлы .doc/.xls/.ppt/.vsd не будут прочитаны. "
                               "Установите LibreOffice или укажите путь в settings.yaml.")
     min_chars = int(settings.get("processing.min_text_chars_per_page", 40))
+    ocr_engine, ocr_status = ocr.get_engine(settings)
+    if ocr_status.warning:
+        stats.messages.append(f"OCR: {ocr_status.warning}.")
+    ocr_errors: list[str] = []
 
     for i, f in enumerate(report.files, start=1):
         progress("Извлечение текста", i, len(report.files))
@@ -66,16 +69,25 @@ def ingest_source(conn: sqlite3.Connection, settings: Settings, source: Path, pr
         except OSError as e:
             stats.skipped.append((f.rel_path, f"не читается: {e}"))
             continue
-        if one(conn, "SELECT id FROM documents WHERE sha256 = ?", (sha,)):
+        ext = f.path.suffix.lower()
+        is_pdf_like = ext == ".pdf" or CONVERT_MAP.get(ext) == "pdf"
+        dup = one(conn, "SELECT id, status, error FROM documents WHERE sha256 = ?", (sha,))
+        if dup is None:
+            cur = conn.execute(
+                "INSERT INTO documents(source_path, rel_path, sha256, ext, size_bytes, status) VALUES (?, ?, ?, ?, ?, 'new')",
+                (str(f.path), f.rel_path, sha, ext, f.path.stat().st_size))
+            doc_id = cur.lastrowid
+            stats.added += 1
+        elif (dup["status"] == "needs_ocr" and is_pdf_like and ocr_engine is not None
+              and dup["error"] != OCR_EMPTY_MARK):
+            # скан, который раньше не удалось прочитать: OCR теперь доступен — читаем заново
+            doc_id = dup["id"]
+            conn.execute("DELETE FROM blocks WHERE doc_id = ?", (doc_id,))
+            conn.execute("UPDATE documents SET status = 'new', error = NULL, ocr_pages = 0 WHERE id = ?", (doc_id,))
+            stats.reprocessed += 1
+        else:
             stats.duplicates += 1
             continue
-
-        ext = f.path.suffix.lower()
-        cur = conn.execute(
-            "INSERT INTO documents(source_path, rel_path, sha256, ext, size_bytes, status) VALUES (?, ?, ?, ?, ?, 'new')",
-            (str(f.path), f.rel_path, sha, ext, f.path.stat().st_size))
-        doc_id = cur.lastrowid
-        stats.added += 1
 
         read_path = f.path
         try:
@@ -86,7 +98,10 @@ def ingest_source(conn: sqlite3.Connection, settings: Settings, source: Path, pr
                 conn.execute("UPDATE documents SET source_path = ? WHERE id = ?", (str(read_path), doc_id))
             if read_path.suffix.lower() not in SUPPORTED_EXTS:
                 raise UnsupportedFormat(ext or "без расширения")
-            parsed = parse_file(read_path, min_text_chars_per_page=min_chars)
+            parsed = parse_file(
+                read_path, min_text_chars_per_page=min_chars,
+                ocr=ocr_engine if read_path.suffix.lower() == ".pdf" else None,
+                ocr_progress=lambda done, total: progress(OCR_STAGE, done, total))
         except UnsupportedFormat as e:
             conn.execute("UPDATE documents SET status = 'unsupported', error = ? WHERE id = ?", (f"формат не поддерживается: {e}", doc_id))
             stats.unsupported += 1
@@ -102,13 +117,28 @@ def ingest_source(conn: sqlite3.Connection, settings: Settings, source: Path, pr
             "INSERT INTO blocks(doc_id, seq, page, section, kind, text) VALUES (?, ?, ?, ?, ?, ?)",
             [(doc_id, n, b.page, b.section, b.kind, b.text) for n, b in enumerate(parsed.blocks)])
         status = "needs_ocr" if parsed.needs_ocr else "parsed"
-        conn.execute("UPDATE documents SET status = ?, pages = ?, title = ? WHERE id = ?",
-                     (status, parsed.pages, parsed.title, doc_id))
+        note = None
+        if parsed.meta.get("ocr_errors"):
+            ocr_errors.append(f"{f.rel_path}: {parsed.meta['ocr_errors'][0]}")
+        if status == "needs_ocr" and parsed.meta.get("ocr_attempted") and not parsed.meta.get("ocr_errors"):
+            note = OCR_EMPTY_MARK
+        conn.execute("UPDATE documents SET status = ?, pages = ?, title = ?, ocr_pages = ?, error = ? WHERE id = ?",
+                     (status, parsed.pages, parsed.title, parsed.ocr_pages, note, doc_id))
         conn.commit()
+        if parsed.ocr_pages:
+            stats.ocr_docs += 1
+            stats.ocr_pages += parsed.ocr_pages
         if status == "needs_ocr":
             stats.needs_ocr += 1
         else:
             stats.parsed += 1
+
+    if stats.needs_ocr and not ocr_status.available:
+        stats.messages.append(f"Сканов без текста: {stats.needs_ocr}. Они не прочитаны: OCR недоступен ({ocr_status.reason}). "
+                              f"Когда OCR заработает, загрузите архив ещё раз: сканы прочитаются заново.")
+    if ocr_errors:
+        shown = "; ".join(ocr_errors[:3]) + (f" и ещё {len(ocr_errors) - 3}" if len(ocr_errors) > 3 else "")
+        stats.messages.append(f"OCR: часть страниц не распознана ({shown}).")
     return stats
 
 

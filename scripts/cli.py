@@ -18,7 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from core import db, pipeline, report  # noqa: E402
+from core import db, ocr, pipeline, report  # noqa: E402
 from core.ask import ask, source_label  # noqa: E402
 from core.config import load_settings  # noqa: E402
 from core import consolidate  # noqa: E402
@@ -57,6 +57,8 @@ def main() -> None:
         print("База:", settings.db_file)
         print("Документов:", db.one(conn, "SELECT count(*) n FROM documents")["n"])
         print("Ollama:", "OK" if st["ok"] else (st["error"] or "нет моделей: " + ", ".join(st["missing"])))
+        oc = ocr.get_engine(settings)[1]
+        print("OCR:", f"OK ({oc.version}, языки: {oc.languages})" if oc.available else f"недоступен: {oc.reason}")
         return
 
     if args.cmd == "process":

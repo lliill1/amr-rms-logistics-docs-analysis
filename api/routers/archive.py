@@ -17,10 +17,10 @@ from ..state import AppState
 router = APIRouter()
 
 PROBLEM_STATUSES = ("needs_ocr", "unsupported", "error")
-PROBLEM_REASONS = {"needs_ocr": "скан без текста (OCR — в следующей версии)",
+PROBLEM_REASONS = {"needs_ocr": "скан: текст не получен (нужен OCR, см. README)",
                    "unsupported": "формат не поддерживается", "error": "ошибка чтения"}
 
-DOC_SQL = """SELECT d.id, d.rel_path, d.title, d.doc_type, d.doc_date, d.revision, d.approval, d.side,
+DOC_SQL = """SELECT d.id, d.rel_path, d.title, d.doc_type, d.ocr_pages, d.doc_date, d.revision, d.approval, d.side,
                     d.subsystems, d.relevance, d.is_current, d.status, d.error, d.card_source,
                     s.rel_path AS superseded_by_path,
                     (SELECT count(*) FROM chunks c WHERE c.doc_id = d.id) AS n_chunks,
