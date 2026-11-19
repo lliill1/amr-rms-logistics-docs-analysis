@@ -205,17 +205,24 @@ ROLE_ORDER = {"роботизирован": 0, "планируется": 1, "о�
 
 
 def _picture(doc, d, out_dir: Path) -> None:
-    """Вставляет схему картинкой; без Pillow — ссылка на файлы схем."""
+    """Вставляет схему картинкой, а расшифровку номеров на связях — обычной таблицей под ней
+    (так текст читается нормальным шрифтом, и длинная расшифровка переходит на следующую страницу).
+    Без Pillow — ссылка на файлы схем."""
     if d.empty:
         doc.add_paragraph(d.note or "Нет данных для схемы.")
         return
     tmp = Path(tempfile.mkdtemp(prefix="dg_"))
     try:
-        png = diagrams.to_png(d, tmp / f"{d.key}.png")
+        png = diagrams.to_png(d, tmp / f"{d.key}.png", with_legend=False)
         if png:
             sec = doc.sections[-1]
-            width = sec.page_width - sec.left_margin - sec.right_margin
-            doc.add_picture(str(png), width=min(width, Cm(d.width / 40)))
+            text_w = sec.page_width - sec.left_margin - sec.right_margin
+            width = min(text_w, Cm(d.width / 40))
+            # не выше страницы (в альбомном отчёте она невысокая) с запасом на заголовок и подпись
+            max_h = sec.page_height - sec.top_margin - sec.bottom_margin - Cm(3)
+            if width * d.plot_height / d.width > max_h:
+                width = int(max_h * d.width / d.plot_height)
+            doc.add_picture(str(png), width=width)
         else:
             doc.add_paragraph("[Схема — в архиве «Схемы» (draw.io, SVG): для картинки в Word установите пакет Pillow.]")
     finally:
@@ -223,6 +230,10 @@ def _picture(doc, d, out_dir: Path) -> None:
     if d.note:
         p = doc.add_paragraph(d.note)
         p.runs[0].italic = True
+    if d.legend and png:
+        doc.add_paragraph("Номера на схеме:").paragraph_format.keep_with_next = True      # подпись не отрывается от таблицы
+        _table(doc, ["№", "Связь", "Что передаётся"],
+               [[it.badge, it.head, "\n".join(it.lines)] for it in d.legend], [1.0, 5.5, 11.5])
 
 
 def _logistics_sections(doc, conn, statuses, include_auto: bool, out_dir: Path) -> None:
@@ -318,7 +329,7 @@ def build_diagrams_zip(conn: sqlite3.Connection, out_dir: Path, include_auto: bo
                 base = f"{i:02d}_{d.key}"
                 z.writestr(f"svg/{base}.svg", diagrams.to_svg(d, uid=f"d{i}", with_title=True))
                 z.writestr(f"mermaid/{base}.mmd", diagrams.to_mermaid(d))
-                png = diagrams.to_png(d, tmp / f"{base}.png")
+                png = diagrams.to_png(d, tmp / f"{base}.png", with_title=True)
                 if png:
                     z.write(png, f"png/{base}.png")
             z.writestr("README.txt", "Схемы DocAnalyzer AMR/RMS\n\n"
