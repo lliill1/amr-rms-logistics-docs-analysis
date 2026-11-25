@@ -74,9 +74,10 @@ def ingest_source(conn: sqlite3.Connection, settings: Settings, source: Path, pr
         dup = one(conn, "SELECT id, status, error FROM documents WHERE sha256 = ?", (sha,))
         if dup is None:
             cur = conn.execute(
-                "INSERT INTO documents(source_path, rel_path, sha256, ext, size_bytes, status) VALUES (?, ?, ?, ?, ?, 'new')",
+                "INSERT INTO documents(source_path, rel_path, sha256, ext, size_bytes, status) "
+                "VALUES (?, ?, ?, ?, ?, 'new') RETURNING id",
                 (str(f.path), f.rel_path, sha, ext, f.path.stat().st_size))
-            doc_id = cur.lastrowid
+            doc_id = cur.fetchone()["id"]
             stats.added += 1
         elif (dup["status"] == "needs_ocr" and is_pdf_like and ocr_engine is not None
               and dup["error"] != OCR_EMPTY_MARK):

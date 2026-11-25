@@ -282,7 +282,9 @@ def run_extraction(conn: sqlite3.Connection, settings: Settings, llm, kinds: lis
             except Exception as e:  # noqa: BLE001 — один сбой модели не должен останавливать весь архив
                 by_kind[key]["errors"] += 1
                 total["errors"] += 1
-                conn.execute("INSERT OR REPLACE INTO extraction_log(chunk_id, kind, found, error) VALUES (?, ?, 0, ?)",
+                conn.execute("""INSERT INTO extraction_log(chunk_id, kind, found, error) VALUES (?, ?, 0, ?)
+                                ON CONFLICT(chunk_id, kind) DO UPDATE SET
+                                found = excluded.found, error = excluded.error, done_at = datetime('now')""",
                              (c["id"], key, str(e)[:300]))
                 conn.commit()
                 continue
@@ -290,7 +292,9 @@ def run_extraction(conn: sqlite3.Connection, settings: Settings, llm, kinds: lis
             for k2 in ("found", "accepted", "rejected_quotes"):
                 by_kind[key][k2] += st[k2]
                 total[k2] += st[k2]
-            conn.execute("INSERT OR REPLACE INTO extraction_log(chunk_id, kind, found, error) VALUES (?, ?, ?, NULL)",
+            conn.execute("""INSERT INTO extraction_log(chunk_id, kind, found, error) VALUES (?, ?, ?, NULL)
+                            ON CONFLICT(chunk_id, kind) DO UPDATE SET
+                            found = excluded.found, error = NULL, done_at = datetime('now')""",
                          (c["id"], key, st["accepted"]))
             conn.commit()
     total["by_kind"] = by_kind

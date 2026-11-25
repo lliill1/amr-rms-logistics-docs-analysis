@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -51,6 +52,14 @@ class Settings:
     @property
     def db_file(self) -> Path:
         return self.path("paths.db_file")
+
+    @property
+    def database_url(self) -> str | None:
+        return os.environ.get("DOCANALYZER_DATABASE_URL") or self.get("database.url") or None
+
+    @property
+    def database_target(self) -> Path | str:
+        return self.database_url or self.db_file
 
 
 def load_settings(overrides: dict | None = None) -> Settings:

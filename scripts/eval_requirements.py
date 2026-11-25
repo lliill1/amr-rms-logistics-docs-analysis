@@ -94,7 +94,7 @@ def main() -> None:
     ap.add_argument("--details", action="store_true", help="показать пропущенные и лишние требования")
     args = ap.parse_args()
     settings = load_settings()
-    conn = db.connect(settings.db_file)
+    conn = db.connect(settings.database_target)
     res = evaluate(conn, load_gold(args.gold), args.threshold)
     print(f"Эталон: {res['gold']}, найдено моделью (в тех же документах): {res['found']}, совпало: {res['matched']}")
     print(f"Точность: {res['precision']:.0%}   Полнота: {res['recall']:.0%}   F1: {res['f1']:.0%}")

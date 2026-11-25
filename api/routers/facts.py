@@ -127,10 +127,12 @@ def list_questions(conn=Depends(get_conn)):
 
 @router.post("/open-questions", status_code=201)
 def create_question(body: QuestionCreate, conn=Depends(get_conn)):
-    cur = conn.execute("INSERT INTO open_questions(text, context, sources, status, answer) VALUES (?, ?, ?, ?, ?)",
+    cur = conn.execute("INSERT INTO open_questions(text, context, sources, status, answer) "
+                       "VALUES (?, ?, ?, ?, ?) RETURNING id",
                        (body.text, (body.context or "")[:1000], body.sources, body.status, body.answer))
+    question_id = cur.fetchone()["id"]
     conn.commit()
-    return one(conn, "SELECT * FROM open_questions WHERE id = ?", (cur.lastrowid,))
+    return one(conn, "SELECT * FROM open_questions WHERE id = ?", (question_id,))
 
 
 @router.patch("/open-questions/{q_id}")

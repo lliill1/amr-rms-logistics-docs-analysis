@@ -21,15 +21,15 @@ class AppState:
         self.jobs = JobManager()
         self._status: dict | None = None
         self._status_at = 0.0
-        conn = db.connect(self.settings.db_file)     # создать базу и схему при старте
+        conn = db.connect(self.settings.database_target)  # создать базу и схему при старте
         try:
             fill_missing_routes(conn)                # v2.1: маршруты процессов, которые модель не заполнила
         finally:
             conn.close()
 
     def connect(self):
-        """Новое подключение на запрос или задачу: SQLite в режиме WAL спокойно переносит несколько подключений."""
-        return db.connect(self.settings.db_file)
+        """Новое подключение на запрос или задачу."""
+        return db.connect(self.settings.database_target)
 
     def llm_status(self, refresh: bool = False) -> dict:
         if refresh or self._status is None or time.time() - self._status_at > STATUS_TTL:

@@ -49,12 +49,12 @@ def main() -> None:
     args = p.parse_args()
 
     settings = load_settings()
-    conn = db.connect(settings.db_file)
+    conn = db.connect(settings.database_target)
     llm = OllamaClient.from_settings(settings)
     st = llm.status()
 
     if args.cmd == "status":
-        print("База:", settings.db_file)
+        print("База:", "PostgreSQL" if settings.database_url else settings.db_file)
         print("Документов:", db.one(conn, "SELECT count(*) n FROM documents")["n"])
         print("Ollama:", "OK" if st["ok"] else (st["error"] or "нет моделей: " + ", ".join(st["missing"])))
         oc = ocr.get_engine(settings)[1]

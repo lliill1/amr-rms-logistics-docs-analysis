@@ -247,8 +247,10 @@ def to_question(conn: sqlite3.Connection, conflict_id: int) -> dict:
     if c["question_id"] and one(conn, "SELECT id FROM open_questions WHERE id = ?", (c["question_id"],)):
         return c
     text, context, sources = question_text(c)
-    cur = conn.execute("INSERT INTO open_questions(text, context, sources) VALUES (?, ?, ?)", (text, context, sources or None))
+    cur = conn.execute("INSERT INTO open_questions(text, context, sources) VALUES (?, ?, ?) RETURNING id",
+                       (text, context, sources or None))
+    question_id = cur.fetchone()["id"]
     conn.execute("UPDATE conflicts SET status = 'question', question_id = ?, updated_at = datetime('now') WHERE id = ?",
-                 (cur.lastrowid, conflict_id))
+                 (question_id, conflict_id))
     conn.commit()
     return get_conflict(conn, conflict_id)

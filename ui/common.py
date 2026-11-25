@@ -22,7 +22,7 @@ def get_settings():
 
 @st.cache_resource
 def get_conn():
-    return db.connect(get_settings().db_file)
+    return db.connect(get_settings().database_target)
 
 
 @st.cache_resource

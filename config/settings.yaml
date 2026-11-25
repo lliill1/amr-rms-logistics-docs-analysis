@@ -6,6 +6,11 @@ paths:
   output_dir: out           # куда выгружаются отчёты
   db_file: data/docanalyzer.sqlite
 
+database:
+  # PostgreSQL включается URL-адресом в DOCANALYZER_DATABASE_URL или здесь.
+  # Если пусто, используется локальный SQLite из paths.db_file.
+  url: ""
+
 llm:
   # Ollama: https://ollama.com (есть установщик для Windows)
   base_url: http://localhost:11434

@@ -1,6 +1,7 @@
-"""SQLite-хранилище: документы, блоки текста, фрагменты для поиска, требования, вопросы."""
+"""SQLite/PostgreSQL-хранилище приложения."""
 from __future__ import annotations
 
+import re
 import sqlite3
 from pathlib import Path
 
@@ -185,9 +186,224 @@ CREATE TABLE IF NOT EXISTS runs (
 );
 """
 
+POSTGRES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS documents (
+    id BIGSERIAL PRIMARY KEY,
+    source_path TEXT NOT NULL,
+    rel_path TEXT NOT NULL,
+    sha256 TEXT NOT NULL UNIQUE,
+    ext TEXT NOT NULL,
+    size_bytes BIGINT,
+    status TEXT NOT NULL DEFAULT 'new',
+    error TEXT,
+    pages INTEGER,
+    ocr_pages INTEGER DEFAULT 0,
+    title TEXT,
+    doc_type TEXT,
+    doc_date TEXT,
+    revision TEXT,
+    approval TEXT,
+    side TEXT,
+    subsystems TEXT,
+    relevance INTEGER DEFAULT 0,
+    relevance_score DOUBLE PRECISION DEFAULT 0,
+    family_key TEXT,
+    is_current INTEGER DEFAULT 1,
+    superseded_by BIGINT REFERENCES documents(id),
+    card_source TEXT DEFAULT 'auto',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS blocks (
+    id BIGSERIAL PRIMARY KEY,
+    doc_id BIGINT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    seq INTEGER NOT NULL,
+    page INTEGER,
+    section TEXT,
+    kind TEXT NOT NULL,
+    text TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_blocks_doc ON blocks(doc_id, seq);
+CREATE TABLE IF NOT EXISTS chunks (
+    id BIGSERIAL PRIMARY KEY,
+    doc_id BIGINT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    seq INTEGER NOT NULL,
+    page_from INTEGER,
+    page_to INTEGER,
+    section TEXT,
+    text TEXT NOT NULL,
+    embedding BYTEA,
+    tsv tsvector GENERATED ALWAYS AS (to_tsvector('russian', coalesce(text, ''))) STORED
+);
+CREATE INDEX IF NOT EXISTS ix_chunks_doc ON chunks(doc_id);
+CREATE INDEX IF NOT EXISTS ix_chunks_tsv ON chunks USING gin(tsv);
+CREATE TABLE IF NOT EXISTS requirements (
+    id BIGSERIAL PRIMARY KEY,
+    code TEXT UNIQUE,
+    doc_id BIGINT REFERENCES documents(id) ON DELETE CASCADE,
+    chunk_id BIGINT REFERENCES chunks(id) ON DELETE SET NULL,
+    page INTEGER,
+    text TEXT NOT NULL,
+    target TEXT,
+    category TEXT,
+    obligation TEXT,
+    quote TEXT,
+    quote_score DOUBLE PRECISION,
+    status TEXT NOT NULL DEFAULT 'auto',
+    comment TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ
+);
+CREATE TABLE IF NOT EXISTS open_questions (
+    id BIGSERIAL PRIMARY KEY,
+    text TEXT NOT NULL,
+    context TEXT,
+    sources TEXT,
+    status TEXT NOT NULL DEFAULT 'open',
+    answer TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS processes (
+    id BIGSERIAL PRIMARY KEY,
+    code TEXT UNIQUE,
+    doc_id BIGINT REFERENCES documents(id) ON DELETE CASCADE,
+    chunk_id BIGINT REFERENCES chunks(id) ON DELETE SET NULL,
+    page INTEGER,
+    name TEXT NOT NULL,
+    trigger TEXT,
+    initiator TEXT,
+    amr_role TEXT,
+    from_location TEXT,
+    to_location TEXT,
+    cargo TEXT,
+    steps TEXT,
+    quote TEXT,
+    quote_score DOUBLE PRECISION,
+    status TEXT NOT NULL DEFAULT 'auto',
+    comment TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ
+);
+CREATE TABLE IF NOT EXISTS interfaces (
+    id BIGSERIAL PRIMARY KEY,
+    code TEXT UNIQUE,
+    doc_id BIGINT REFERENCES documents(id) ON DELETE CASCADE,
+    chunk_id BIGINT REFERENCES chunks(id) ON DELETE SET NULL,
+    page INTEGER,
+    source_system TEXT NOT NULL,
+    target_system TEXT NOT NULL,
+    message TEXT NOT NULL,
+    protocol TEXT,
+    trigger TEXT,
+    quote TEXT,
+    quote_score DOUBLE PRECISION,
+    status TEXT NOT NULL DEFAULT 'auto',
+    comment TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ
+);
+CREATE TABLE IF NOT EXISTS responsibilities (
+    id BIGSERIAL PRIMARY KEY,
+    code TEXT UNIQUE,
+    doc_id BIGINT REFERENCES documents(id) ON DELETE CASCADE,
+    chunk_id BIGINT REFERENCES chunks(id) ON DELETE SET NULL,
+    page INTEGER,
+    function TEXT NOT NULL,
+    system TEXT NOT NULL,
+    quote TEXT,
+    quote_score DOUBLE PRECISION,
+    status TEXT NOT NULL DEFAULT 'auto',
+    comment TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ
+);
+CREATE TABLE IF NOT EXISTS conflicts (
+    id BIGSERIAL PRIMARY KEY,
+    key TEXT NOT NULL UNIQUE,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    details TEXT,
+    signature TEXT,
+    status TEXT NOT NULL DEFAULT 'open',
+    resolution TEXT,
+    question_id BIGINT REFERENCES open_questions(id) ON DELETE SET NULL,
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS extraction_log (
+    chunk_id BIGINT NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    found INTEGER,
+    error TEXT,
+    done_at TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (chunk_id, kind)
+);
+CREATE TABLE IF NOT EXISTS runs (
+    id BIGSERIAL PRIMARY KEY,
+    stage TEXT NOT NULL,
+    started_at TIMESTAMPTZ DEFAULT now(),
+    finished_at TIMESTAMPTZ,
+    info TEXT
+);
+"""
 
-def connect(db_file: Path | str) -> sqlite3.Connection:
-    db_file = Path(db_file)
+
+def _postgres_sql(sql: str) -> str:
+    """Переводит SQLite placeholders и время к синтаксису PostgreSQL."""
+    out = []
+    i = 0
+    quote = None
+    while i < len(sql):
+        char = sql[i]
+        if quote:
+            out.append("%%" if char == "%" else char)
+            if char == quote:
+                if i + 1 < len(sql) and sql[i + 1] == quote:
+                    out.append(sql[i + 1])
+                    i += 1
+                else:
+                    quote = None
+        elif char in ("'", '"'):
+            quote = char
+            out.append(char)
+        elif char == "?":
+            out.append("%s")
+        elif char == "%":
+            out.append("%%")
+        elif char == ":" and i + 1 < len(sql) and sql[i + 1] == ":":
+            out.append("::")
+            i += 1
+        elif char == ":" and i + 1 < len(sql) and (sql[i + 1].isalpha() or sql[i + 1] == "_"):
+            end = i + 2
+            while end < len(sql) and (sql[end].isalnum() or sql[end] == "_"):
+                end += 1
+            out.append(f"%({sql[i + 1:end]})s")
+            i = end - 1
+        else:
+            out.append(char)
+        i += 1
+    return re.sub(r"datetime\(\s*'now'\s*\)", "CURRENT_TIMESTAMP", "".join(out), flags=re.IGNORECASE)
+
+
+class _PostgresConnection:
+    dialect = "postgresql"
+
+    def __init__(self, connection):
+        self._connection = connection
+
+    def execute(self, sql, params=()):
+        return self._connection.execute(_postgres_sql(sql), params)
+
+    def executemany(self, sql, seq_of_params):
+        return self._connection.cursor().executemany(_postgres_sql(sql), seq_of_params)
+
+    def __getattr__(self, name):
+        return getattr(self._connection, name)
+
+
+def connect(db_file: Path | str):
+    db_value = str(db_file)
+    if db_value.lower().startswith(("postgresql://", "postgres://")):
+        return _connect_postgres(db_value)
+    db_file = Path(db_value)
     if str(db_file) != ":memory:":
         db_file.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_file), check_same_thread=False)
@@ -196,6 +412,73 @@ def connect(db_file: Path | str) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode = WAL") if str(db_file) != ":memory:" else None
     conn.executescript(SCHEMA)
     _migrate(conn)
+    return conn
+
+
+def _missing_postgres_app_schema(conn) -> list[str]:
+    required = {
+        "documents": {"id", "source_path", "rel_path", "sha256", "ext", "ocr_pages"},
+        "blocks": {"id", "doc_id", "seq", "kind", "text"},
+        "chunks": {"id", "doc_id", "seq", "text", "embedding", "tsv"},
+        "requirements": {"id", "text", "status"},
+        "open_questions": {"id", "text", "status"},
+        "processes": {"id", "name", "status"},
+        "interfaces": {"id", "source_system", "target_system", "message", "status"},
+        "responsibilities": {"id", "function", "system", "status"},
+        "conflicts": {"id", "key", "kind", "title", "status"},
+        "extraction_log": {"chunk_id", "kind", "found", "done_at"},
+        "runs": {"id", "stage"},
+    }
+    available = conn.execute(
+        """SELECT table_name, column_name
+           FROM information_schema.columns
+           WHERE table_schema = current_schema()"""
+    ).fetchall()
+    columns = {}
+    for row in available:
+        columns.setdefault(row["table_name"], set()).add(row["column_name"])
+
+    missing = []
+    for table, required_columns in required.items():
+        if table not in columns:
+            missing.append(f"{table} (таблица отсутствует)")
+            continue
+        absent = sorted(required_columns - columns[table])
+        if absent:
+            missing.append(f"{table}.{', '.join(absent)}")
+    return missing
+
+
+def _connect_postgres(database_url: str):
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+    except ImportError as exc:
+        raise RuntimeError("Для PostgreSQL установите зависимости проекта: pip install -r requirements.txt") from exc
+
+    connection = psycopg.connect(database_url, row_factory=dict_row)
+    conn = _PostgresConnection(connection)
+    try:
+        table = conn.execute(
+            "SELECT to_regclass('public.documents') IS NOT NULL AS exists"
+        ).fetchone()
+        if not table or not table["exists"]:
+            for statement in POSTGRES_SCHEMA.split(";"):
+                if statement.strip():
+                    conn.execute(statement)
+            conn.commit()
+        else:
+            missing = _missing_postgres_app_schema(conn)
+            if missing:
+                raise RuntimeError(
+                    "Схема PostgreSQL не соответствует приложению DocAnalyzer. "
+                    "Запустите scripts/prepare_postgres_for_app.sql от владельца базы "
+                    "перед запуском приложения. Отсутствуют: "
+                    + ", ".join(missing)
+                )
+    except Exception:
+        conn.close()
+        raise
     return conn
 
 

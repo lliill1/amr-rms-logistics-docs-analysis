@@ -146,8 +146,15 @@ def fts_search(conn: sqlite3.Connection, query: str, limit: int = 30, only_curre
     terms = _fts_terms(query + " " + " ".join(glossary.expand_query(query)))
     if not terms:
         return []
-    match = " OR ".join(terms)
     cond = "AND d.is_current = 1" if only_current else ""
+    if getattr(conn, "dialect", None) == "postgresql":
+        match = " | ".join(term.strip('"*') for term in terms)
+        sql = f"""SELECT c.id, ts_rank_cd(c.tsv, to_tsquery('russian', ?)) AS s
+                  FROM chunks c JOIN documents d ON d.id = c.doc_id
+                  WHERE c.tsv @@ to_tsquery('russian', ?) {cond}
+                  ORDER BY s DESC LIMIT ?"""
+        return [(r["id"], float(r["s"])) for r in conn.execute(sql, (match, match, limit)).fetchall()]
+    match = " OR ".join(terms)
     sql = f"""SELECT c.id, bm25(chunks_fts) AS s FROM chunks_fts
               JOIN chunks c ON c.id = chunks_fts.rowid JOIN documents d ON d.id = c.doc_id
               WHERE chunks_fts MATCH ? {cond} ORDER BY s LIMIT ?"""
@@ -161,8 +168,13 @@ def vector_search(conn: sqlite3.Connection, query_vec: np.ndarray, limit: int = 
                             WHERE c.embedding IS NOT NULL {cond}""").fetchall()
     if not data:
         return []
-    ids = np.array([r[0] for r in data])
-    mat = np.vstack([np.frombuffer(r[1], dtype=np.float32) for r in data])
+    if getattr(conn, "dialect", None) == "postgresql":
+        ids = np.array([r["id"] for r in data])
+        embeddings = [r["embedding"] for r in data]
+    else:
+        ids = np.array([r[0] for r in data])
+        embeddings = [r[1] for r in data]
+    mat = np.vstack([np.frombuffer(value, dtype=np.float32) for value in embeddings])
     q = query_vec.reshape(-1).astype(np.float32)
     if mat.shape[1] != q.shape[0]:
         return []
