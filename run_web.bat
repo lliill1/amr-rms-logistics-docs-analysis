@@ -40,28 +40,28 @@ if errorlevel 1 (
 
 call :owned_process_running
 if not errorlevel 1 (
-    echo Сервис уже запущен через run.bat.
+    echo Веб-сервис уже запущен через run_web.bat.
     pause
     goto menu
 )
 call :http_service_running
 if not errorlevel 1 (
-    echo На порту 8501 уже отвечает приложение.
-    echo Оно запущено не через этот run.bat; остановите его отдельно.
+    echo Порт 8501 уже занят другим процессом.
+    echo Остановите его отдельно и повторите запуск.
     pause
     goto menu
 )
 
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 echo Запуск сервиса...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$python = Join-Path $env:PYTHON_ENV 'Scripts\python.exe'; $script = Join-Path $env:APP_ROOT 'app.py'; $arguments = '-m streamlit run ' + [char]34 + $script + [char]34 + ' --server.address=127.0.0.1 --server.port=8501 --server.headless=true --browser.gatherUsageStats=false'; $stdout = Join-Path $env:LOG_DIR 'service.log'; $stderr = Join-Path $env:LOG_DIR 'service-error.log'; $p = Start-Process -FilePath $python -ArgumentList $arguments -WorkingDirectory $env:APP_ROOT -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru; Set-Content -LiteralPath $env:PID_FILE -Value $p.Id -Encoding ASCII; Write-Output ('PID: ' + $p.Id)"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$python = Join-Path $env:PYTHON_ENV 'Scripts\python.exe'; $script = Join-Path $env:APP_ROOT 'server.py'; $arguments = [char]34 + $script + [char]34 + ' --no-browser'; $stdout = Join-Path $env:LOG_DIR 'service.log'; $stderr = Join-Path $env:LOG_DIR 'service-error.log'; $p = Start-Process -FilePath $python -ArgumentList $arguments -WorkingDirectory $env:APP_ROOT -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru; Set-Content -LiteralPath $env:PID_FILE -Value $p.Id -Encoding ASCII; Write-Output ('PID: ' + $p.Id)"
 if errorlevel 1 (
     echo Не удалось запустить сервис.
     pause
     goto menu
 )
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ready = $false; for ($i = 0; $i -lt 20; $i++) { try { $r = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8501/_stcore/health' -TimeoutSec 2; if ($r.StatusCode -eq 200) { $ready = $true; break } } catch {}; Start-Sleep -Seconds 1 }; if ($ready) { exit 0 } else { exit 1 }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ready = $false; for ($i = 0; $i -lt 20; $i++) { try { $r = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8501/api/health' -TimeoutSec 2; if ($r.StatusCode -eq 200) { $ready = $true; break } } catch {}; Start-Sleep -Seconds 1 }; if ($ready) { exit 0 } else { exit 1 }"
 if errorlevel 1 (
     echo Сервис запущен, но пока не отвечает. Проверьте журналы через пункт 2.
 ) else (
@@ -78,7 +78,7 @@ if errorlevel 1 (
     if errorlevel 1 (
         echo Сервис не работает.
     ) else (
-        echo На порту 8501 отвечает приложение, не запущенное через этот run.bat.
+        echo Порт 8501 занят приложением, не запущенным через этот run_web.bat.
         pause
         goto menu
     )
@@ -124,18 +124,18 @@ goto menu
 
 :stop_service
 if not exist "%PID_FILE%" (
-    echo Нет сохраненного идентификатора процесса. Управляемый сервис не запущен.
+    echo Нет сохраненного идентификатора процесса. Управляемый веб-сервис не запущен.
     pause
     goto menu
 )
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference = 'Stop'; $id = 0; if (-not [int]::TryParse((Get-Content -Raw -LiteralPath $env:PID_FILE), [ref]$id)) { Write-Error 'Некорректный PID-файл.'; exit 1 }; $p = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $id); $root = $env:APP_ROOT.TrimEnd('\'); if ($p -and $p.CommandLine -like '*streamlit*' -and $p.CommandLine -like '*app.py*' -and $p.CommandLine.IndexOf($root, [StringComparison]::OrdinalIgnoreCase) -ge 0) { Stop-Process -Id $id -Force; Remove-Item -LiteralPath $env:PID_FILE -Force; Write-Output 'Сервис остановлен.'; exit 0 }; Remove-Item -LiteralPath $env:PID_FILE -Force; Write-Output 'Процесс сервиса не найден; устаревший PID-файл удален.'; exit 1"
-if errorlevel 1 echo Если приложение все еще работает, оно не было запущено этим run.bat.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference = 'Stop'; $id = 0; if (-not [int]::TryParse((Get-Content -Raw -LiteralPath $env:PID_FILE), [ref]$id)) { Write-Error 'Некорректный PID-файл.'; exit 1 }; $p = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $id); $root = $env:APP_ROOT.TrimEnd('\'); if ($p -and $p.CommandLine -like '*server.py*' -and $p.CommandLine.IndexOf($root, [StringComparison]::OrdinalIgnoreCase) -ge 0) { Stop-Process -Id $id -Force; Remove-Item -LiteralPath $env:PID_FILE -Force; Write-Output 'Веб-сервис остановлен.'; exit 0 }; Remove-Item -LiteralPath $env:PID_FILE -Force; Write-Output 'Процесс веб-сервиса не найден; устаревший PID-файл удален.'; exit 1"
+if errorlevel 1 echo Если приложение все еще работает, проверьте его процесс вручную.
 pause
 goto menu
 
 :restart_service
 if exist "%PID_FILE%" (
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference = 'Stop'; $id = 0; if ([int]::TryParse((Get-Content -Raw -LiteralPath $env:PID_FILE), [ref]$id)) { $p = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $id); $root = $env:APP_ROOT.TrimEnd('\'); if ($p -and $p.CommandLine -like '*streamlit*' -and $p.CommandLine -like '*app.py*' -and $p.CommandLine.IndexOf($root, [StringComparison]::OrdinalIgnoreCase) -ge 0) { Stop-Process -Id $id -Force } }; Remove-Item -LiteralPath $env:PID_FILE -Force -ErrorAction SilentlyContinue"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference = 'Stop'; $id = 0; if ([int]::TryParse((Get-Content -Raw -LiteralPath $env:PID_FILE), [ref]$id)) { $p = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $id); $root = $env:APP_ROOT.TrimEnd('\'); if ($p -and $p.CommandLine -like '*server.py*' -and $p.CommandLine.IndexOf($root, [StringComparison]::OrdinalIgnoreCase) -ge 0) { Stop-Process -Id $id -Force } }; Remove-Item -LiteralPath $env:PID_FILE -Force -ErrorAction SilentlyContinue"
     timeout /t 2 /nobreak >nul
 )
 call :prepare_environment
@@ -145,7 +145,7 @@ if errorlevel 1 (
 )
 call :http_service_running
 if not errorlevel 1 (
-    echo На порту 8501 уже отвечает приложение, не управляемое этим run.bat.
+    echo Порт 8501 занят приложением, не управляемым этим run_web.bat.
     echo Оно не было остановлено. Освободите порт и повторите перезапуск.
     pause
     goto menu
@@ -271,9 +271,9 @@ set "PIP_CACHE_DIR=%PYTHON_ENV%\pip-cache"
 exit /b 0
 
 :owned_process_running
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$id = 0; if (-not (Test-Path -LiteralPath $env:PID_FILE) -or -not [int]::TryParse((Get-Content -Raw -LiteralPath $env:PID_FILE), [ref]$id)) { exit 1 }; $p = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $id); $root = $env:APP_ROOT.TrimEnd('\'); if ($p -and $p.CommandLine -like '*streamlit*' -and $p.CommandLine -like '*app.py*' -and $p.CommandLine.IndexOf($root, [StringComparison]::OrdinalIgnoreCase) -ge 0) { exit 0 }; exit 1"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$id = 0; if (-not (Test-Path -LiteralPath $env:PID_FILE) -or -not [int]::TryParse((Get-Content -Raw -LiteralPath $env:PID_FILE), [ref]$id)) { exit 1 }; $p = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $id); $root = $env:APP_ROOT.TrimEnd('\'); if ($p -and $p.CommandLine -like '*server.py*' -and $p.CommandLine.IndexOf($root, [StringComparison]::OrdinalIgnoreCase) -ge 0) { exit 0 }; exit 1"
 exit /b %errorlevel%
 
 :http_service_running
-powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8501/_stcore/health' -TimeoutSec 3; if ($r.StatusCode -eq 200) { exit 0 } } catch {}; exit 1"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$listener = Get-NetTCPConnection -LocalPort 8501 -State Listen -ErrorAction SilentlyContinue; if ($listener) { exit 0 }; exit 1"
 exit /b %errorlevel%
