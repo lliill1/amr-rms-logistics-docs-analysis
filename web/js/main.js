@@ -8,6 +8,8 @@ import { closeOverlay } from './overlay.js';
 import { createArchivePage } from './pages/archive.js';
 import { createAskPage } from './pages/ask.js';
 import { createFactsPage } from './pages/facts.js';
+import { createHistoryPage } from './pages/history.js';
+import { createProfilePage } from './pages/profile.js';
 import { createReportPage } from './pages/report.js';
 import { createSystemsPage } from './pages/systems.js';
 import { getTheme, toggleTheme } from './theme.js';
@@ -19,6 +21,8 @@ const ROUTES = [
   { path: '/facts', label: 'Факты и ревью', create: createFactsPage },
   { path: '/systems', label: 'Логистика и системы', create: createSystemsPage },
   { path: '/report', label: 'Отчёт', create: createReportPage },
+  { path: '/history', label: 'Журнал', create: createHistoryPage },
+  { path: '/profile', label: 'Личный кабинет', create: createProfilePage },
 ];
 
 // ───────── шапка ─────────
@@ -32,8 +36,9 @@ function brandMark() {
   return svg;
 }
 
+const NAV_ROUTES = ROUTES.filter((r) => !['/history', '/profile'].includes(r.path));
 const nav = h('nav', { class: 'pillnav', 'aria-label': 'Разделы' },
-  ROUTES.map((r) => h('a', { class: 'pillnav__item', href: `#${r.path}`, dataset: { path: r.path } }, r.label)));
+  NAV_ROUTES.map((r) => h('a', { class: 'pillnav__item', href: `#${r.path}`, dataset: { path: r.path } }, r.label)));
 
 // статус Ollama
 const statusDot = h('span', { class: 'statuschip__dot' });
@@ -133,14 +138,26 @@ function renderJobChip() {
   mount(jobChip, sp, h('span', null, JOB_LABELS[j.kind] || 'Задача'), p ? h('span', { class: 'jobchip__pct' }, `${Math.round(p * 100)}%`) : null);
 }
 
+const root = document.getElementById('app');
+let currentUser = '';
+let initialized = false;
 const view = h('main', { class: 'view', id: 'view', tabIndex: -1 });
+const accountLabel = h('span');
+const accountBtn = h('button', { class: 'btn btn--secondary account-btn', type: 'button', onClick: () => {
+  if (parseHash().path === '/profile') window.scrollTo({ top: 0, behavior: 'smooth' });
+  else location.hash = '#/profile';
+}, 'aria-label': 'Открыть личный кабинет' }, icon('user-round', 16), accountLabel);
+function renderAccountBtn() {
+  accountLabel.textContent = 'Личный кабинет';
+  accountBtn.title = currentUser ? `Личный кабинет пользователя ${currentUser}` : 'Открыть личный кабинет';
+}
 const shell = h('div', { class: 'app' },
   h('header', { class: 'topbar' },
     h('a', { class: 'brand', href: '#/archive', 'aria-label': 'DocAnalyzer AMR/RMS — на главную' },
       h('span', { class: 'brand__mark' }, brandMark()),
       h('span', { class: 'brand__text' }, h('span', { class: 'brand__name' }, 'DocAnalyzer'), h('span', { class: 'brand__sub' }, 'AMR / RMS'))),
     nav,
-    h('div', { class: 'topbar__right' }, jobChip, statusWrap, themeBtn)),
+    h('div', { class: 'topbar__right' }, jobChip, statusWrap, accountBtn, themeBtn)),
   view,
   h('footer', { class: 'foot' }, icon('badge-check', 15), 'Документы обрабатываются только на этом компьютере'));
 
@@ -164,8 +181,11 @@ function render() {
     a.classList.toggle('is-active', on);
     on ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current');
   });
+  const accountSectionActive = route.path === '/profile' || route.path === '/history';
+  accountBtn.classList.toggle('is-active', accountSectionActive);
+  accountSectionActive ? accountBtn.setAttribute('aria-current', 'page') : accountBtn.removeAttribute('aria-current');
   document.title = `${route.label} · DocAnalyzer AMR/RMS`;
-  current = route.create({ query });
+  current = route.create({ query, user: currentUser, onSwitchAccount: () => showLogin(true) });
   mount(view, current.el);
   view.classList.remove('view'); // перезапуск анимации появления
   void view.offsetWidth;
@@ -182,8 +202,18 @@ function showFatal(err) {
 }
 
 // ───────── запуск ─────────
-async function boot() {
-  document.getElementById('app').replaceWith(shell);
+async function boot(username = '') {
+  currentUser = String(username || currentUser || 'Пользователь').trim() || 'Пользователь';
+  renderAccountBtn();
+  root.replaceChildren(shell);
+
+  // Повторный вход только переключает демонстрационный аккаунт, не запускает
+  // повторно подписки и таймеры приложения.
+  if (initialized) {
+    render();
+    return;
+  }
+  initialized = true;
   renderThemeBtn();
   renderStatusChip();
   renderJobChip();
@@ -216,14 +246,14 @@ async function boot() {
 }
 
 // Первый экран — локальная заглушка входа. Проверка пользователя пока не подключена.
-function showLogin() {
-  const loginInput = h('input', { class: 'input login__input', id: 'login-user', name: 'username', type: 'text', placeholder: 'Введите логин', autocomplete: 'username' });
+function showLogin(isSwitch = false) {
+  const loginInput = h('input', { class: 'input login__input', id: 'login-user', name: 'username', type: 'text', placeholder: 'Введите логин', autocomplete: 'username', value: isSwitch ? currentUser : '' });
   const passwordInput = h('input', { class: 'input login__input', id: 'login-password', name: 'password', type: 'password', placeholder: 'Введите пароль', autocomplete: 'current-password' });
   const submit = h('button', { class: 'btn btn--primary btn--lg btn--block', type: 'submit' }, 'Войти', icon('arrow-right', 17));
   const form = h('form', { class: 'login__form', onSubmit: (event) => {
     event.preventDefault();
     // Заглушка: логин и пароль не отправляются и не проверяются.
-    boot();
+    boot(loginInput.value);
   } },
     h('label', { class: 'field' }, h('span', { class: 'field__label' }, 'Логин'), loginInput),
     h('label', { class: 'field' }, h('span', { class: 'field__label' }, 'Пароль'), passwordInput),
@@ -236,11 +266,11 @@ function showLogin() {
       h('div', { class: 'login__brand' },
         h('span', { class: 'brand__mark' }, brandMark()),
         h('span', { class: 'brand__text' }, h('span', { class: 'brand__name' }, 'DocAnalyzer'), h('span', { class: 'brand__sub' }, 'AMR / RMS'))),
-      h('div', { class: 'login__heading' }, h('h1', null, 'Добро пожаловать'), h('p', null, 'Войдите, чтобы продолжить работу с документацией')),
+      h('div', { class: 'login__heading' }, h('h1', null, isSwitch ? 'Сменить аккаунт' : 'Добро пожаловать'), h('p', null, isSwitch ? 'Введите логин другого пользователя, чтобы продолжить' : 'Войдите, чтобы продолжить работу с документацией')),
       form,
       h('div', { class: 'login__notice' }, icon('info', 15), h('span', null, 'Демо-вход: поля пока не проверяются.'))),
     h('p', { class: 'login__footer' }, icon('shield-check', 15), 'DocAnalyzer AMR/RMS · локальный интерфейс'));
-  document.getElementById('app').replaceChildren(login);
+  root.replaceChildren(login);
 }
 
 showLogin();
