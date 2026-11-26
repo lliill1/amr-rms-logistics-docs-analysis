@@ -215,4 +215,32 @@ async function boot() {
   render();
 }
 
-boot();
+// Первый экран — локальная заглушка входа. Проверка пользователя пока не подключена.
+function showLogin() {
+  const loginInput = h('input', { class: 'input login__input', id: 'login-user', name: 'username', type: 'text', placeholder: 'Введите логин', autocomplete: 'username' });
+  const passwordInput = h('input', { class: 'input login__input', id: 'login-password', name: 'password', type: 'password', placeholder: 'Введите пароль', autocomplete: 'current-password' });
+  const submit = h('button', { class: 'btn btn--primary btn--lg btn--block', type: 'submit' }, 'Войти', icon('arrow-right', 17));
+  const form = h('form', { class: 'login__form', onSubmit: (event) => {
+    event.preventDefault();
+    // Заглушка: логин и пароль не отправляются и не проверяются.
+    boot();
+  } },
+    h('label', { class: 'field' }, h('span', { class: 'field__label' }, 'Логин'), loginInput),
+    h('label', { class: 'field' }, h('span', { class: 'field__label' }, 'Пароль'), passwordInput),
+    submit);
+  const themeToggle = h('button', { class: 'iconbtn login__theme', type: 'button', 'aria-label': 'Переключить тему', title: 'Переключить тему', onClick: () => { toggleTheme(); mount(themeToggle, icon(getTheme() === 'dark' ? 'sun' : 'moon', 18)); } });
+  mount(themeToggle, icon(getTheme() === 'dark' ? 'sun' : 'moon', 18));
+  const login = h('main', { class: 'login' },
+    h('div', { class: 'login__top' }, themeToggle),
+    h('section', { class: 'login__card card card--accent' },
+      h('div', { class: 'login__brand' },
+        h('span', { class: 'brand__mark' }, brandMark()),
+        h('span', { class: 'brand__text' }, h('span', { class: 'brand__name' }, 'DocAnalyzer'), h('span', { class: 'brand__sub' }, 'AMR / RMS'))),
+      h('div', { class: 'login__heading' }, h('h1', null, 'Добро пожаловать'), h('p', null, 'Войдите, чтобы продолжить работу с документацией')),
+      form,
+      h('div', { class: 'login__notice' }, icon('info', 15), h('span', null, 'Демо-вход: поля пока не проверяются.'))),
+    h('p', { class: 'login__footer' }, icon('shield-check', 15), 'DocAnalyzer AMR/RMS · локальный интерфейс'));
+  document.getElementById('app').replaceChildren(login);
+}
+
+showLogin();
